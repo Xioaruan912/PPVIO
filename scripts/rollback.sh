@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 # This only replaces ppvio with an explicitly supplied prior image.
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-compose_file="$repo_root/docker-compose.player.yml"
+compose_file="$repo_root/docker-compose.yml"
 
 usage() {
   printf 'usage: %s --env-file PLAYER_ENV --image PRIOR_PLAYER_IMAGE --execute\n' "$0" >&2

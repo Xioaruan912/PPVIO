@@ -65,6 +65,16 @@ class DeploymentArtifactTests(unittest.TestCase):
             # Another service on the host (the TGVIO bot) must be left exactly as it was.
             self.assertIn('[[ "$(neighbour)" == "$bot_before" ]]', script)
 
+    def test_scripts_only_reference_files_that_exist(self) -> None:
+        import re
+
+        for script in sorted((ROOT / "scripts").glob("*.sh")):
+            text = script.read_text(encoding="utf-8")
+            for name in set(re.findall(r'\$repo_root/([A-Za-z0-9_./-]+\.(?:yml|sh|py|lock))', text)):
+                self.assertTrue((ROOT / name).is_file(), f"{script.name} refers to missing {name}")
+            for name in set(re.findall(r'source/(scripts/[A-Za-z0-9_.-]+\.sh)', text)):
+                self.assertTrue((ROOT / name).is_file(), f"{script.name} refers to missing {name}")
+
     def test_remote_release_keeps_a_rollback_point_and_rolls_back_when_unhealthy(self) -> None:
         remote = read("scripts", "remote_release.sh")
         self.assertIn("scripts/deploy.sh", remote)

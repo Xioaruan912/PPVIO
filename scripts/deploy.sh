@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 # Player-only cutover. It never invokes the Bot compose file or service.
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-compose_file="$repo_root/docker-compose.player.yml"
+compose_file="$repo_root/docker-compose.yml"
 
 usage() {
   printf 'usage: %s --env-file PLAYER_ENV --execute\n' "$0" >&2
