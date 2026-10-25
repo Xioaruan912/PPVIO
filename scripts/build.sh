@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Build a local PPVIO image candidate. This command never starts or restarts
+# containers. An uploaded/built candidate becomes a production release only
+# after an authorized cutover and verification of the actual running image.
+repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$repo_root"
+
+usage() {
+  printf 'usage: %s --tag IMAGE_TAG [--commit COMMIT] [--release-id ID]\n' "$0" >&2
+  exit 2
+}
+
+tag=
+commit=$(git -c safe.directory="$repo_root" rev-parse HEAD 2>/dev/null || printf 'unknown')
+release_id=local-ppvio
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --tag) tag=${2:-}; shift 2 ;;
+    --commit) commit=${2:-}; shift 2 ;;
+    --release-id) release_id=${2:-}; shift 2 ;;
+    *) usage ;;
+  esac
+done
+[[ -n "$tag" && "$tag" != *$'\n'* ]] || usage
+[[ "$commit" =~ ^([0-9a-f]{40}|unknown)$ ]] || { printf 'invalid commit\n' >&2; exit 2; }
+[[ "$release_id" =~ ^[A-Za-z0-9._-]+$ ]] || { printf 'invalid release id\n' >&2; exit 2; }
+
+# The front end lives in web/ of this repository, so its revision is this commit.
+web_commit=$commit
+
+DOCKER_BUILDKIT=1 docker build --pull=false \
+  --file Dockerfile \
+  --build-arg "PPVIO_COMMIT=$commit" \
+  --build-arg "PPVIO_RELEASE_ID=$release_id" \
+  --build-arg "PPVIO_WEB_COMMIT=$web_commit" \
+  --tag "$tag" .
+printf 'ppvio_candidate=%s web_commit=%s\n' "$tag" "$web_commit"

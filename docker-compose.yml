@@ -1,0 +1,59 @@
+# PPVIO: the one service of this project. Only the ppvio container is created or replaced.
+services:
+  ppvio:
+    image: ${PPVIO_IMAGE:?set a Player-only image reference}
+    container_name: ppvio
+    restart: unless-stopped
+    profiles: ["ppvio"]
+    environment:
+      PPVIO_ENABLED: ${PPVIO_ENABLED:?set true only for an approved Player deployment}
+      PPVIO_DATA_DIR: /var/lib/ppvio
+      PPVIO_ACCESS_SECRET: ${PPVIO_ACCESS_SECRET:?set a Player-only access secret}
+      PPVIO_RECOVERY_KEY: ${PPVIO_RECOVERY_KEY:?set a Player-only 256-bit recovery key}
+      PPVIO_DELETE_ENABLED: ${PPVIO_DELETE_ENABLED:-false}
+      PPVIO_CATALOG_POLL_SECONDS: ${PPVIO_CATALOG_POLL_SECONDS:-60}
+      PPVIO_MAX_STREAMS: ${PPVIO_MAX_STREAMS:-8}
+      PPVIO_MAX_STREAMS_PER_CLIENT: ${PPVIO_MAX_STREAMS_PER_CLIENT:-8}
+      PPVIO_LARGE_VIDEO_SECONDS: ${PPVIO_LARGE_VIDEO_SECONDS:-300}
+      PPVIO_FASTSTART_BACKFILL: ${PPVIO_FASTSTART_BACKFILL:-true}
+      PPVIO_CACHE_BYTES: ${PPVIO_CACHE_BYTES:-4294967296}
+      PPVIO_CACHE_CHUNK_MB: ${PPVIO_CACHE_CHUNK_MB:-1}
+      PPVIO_CACHE_WINDOW_MB: ${PPVIO_CACHE_WINDOW_MB:-32}
+      PPVIO_CACHE_CONCURRENCY: ${PPVIO_CACHE_CONCURRENCY:-4}
+      PPVIO_WARM_ALL: ${PPVIO_WARM_ALL:-true}
+      PPVIO_WARM_HEAD_MB: ${PPVIO_WARM_HEAD_MB:-4}
+      # Optional direct reads: the OpenList API on the host, reached through the
+      # Docker host gateway (never the public interface). Empty keeps WebDAV only.
+      PPVIO_OPENLIST_API_URL: ${PPVIO_OPENLIST_API_URL:-}
+      PPVIO_DIRECT_USER_AGENT: ${PPVIO_DIRECT_USER_AGENT:-}
+      # Optional: the same WebDAV without the public internet when OpenList runs
+      # on this host (e.g. http://host.docker.internal:5244/dav). Empty uses the
+      # address set in the Player storage settings page.
+      PPVIO_WEBDAV_INTERNAL_URL: ${PPVIO_WEBDAV_INTERNAL_URL:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      # Docker publishes this only on the host loopback interface. The future
+      # HTTP server may bind its container port normally without public reachability.
+      - "127.0.0.1:${PPVIO_PORT:-8790}:8790"
+    volumes:
+      - type: bind
+        source: ${PPVIO_HOST_DATA_DIR:?set a Player-owned host data directory}
+        target: /var/lib/ppvio
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "from urllib.request import urlopen; urlopen('http://127.0.0.1:8790/healthz', timeout=2).close()"
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3

@@ -1,0 +1,62 @@
+# Player 静态封面供给
+
+## 唯一所有者
+
+前端 cover-tile/cover-image 只展示 Player API 的 cover_url，不创建视频或抓帧。
+Player 的 WebDavArchiveCatalogSource 只在目录声明 covers.json 时读取有界 JSON；
+CatalogSyncService 校验已提交 manifest/_COMPLETE 后，cover_sidecar 验证可选封面。
+原归档 manifest 内有效封面优先，旧视频使用绑定原包的追加索引。
+
+旧包的 covers.json 由已退役的维护 worker 写入，Player 仍按下面的合同读取。
+新封面由 Player 自己生成（src/tgvio_player/infrastructure/rendition_maker.py），
+写到 `<库>/.tgvio/<media_id>/cover-<dhash>.jpg`，不再写 covers.json。
+
+## 提交合同
+
+covers.json 使用 tgvio.archive.covers/v2、bounded-frame-v2，包含 package_id、
+manifest_sha256；covers 以原媒体相对路径为键，条目包含 media_sha256、
+JPEG sha256、size_bytes、mime_type 和 cover/backfill/<sha256>.jpg。
+每项 JPEG 至多 1,000,000 bytes；索引至多 512KiB、最多 4000 项。
+条目**可选**包含 `phash`：那一帧的 64-bit dHash，16 位小写 hex（bit 0 为最高位，逐行比较 9×8 盒式平均后的相邻列）。
+它从 worker **已经取到**的 32×32 灰度算出：不新增依赖、不新增 ffmpeg 进程。
+**schema 与 algorithm 串不得改动** —— Player 精确比较这两个值，升版会拒收整包封面；
+`phash` 只是加字段，缺失即“无相似信息”，不是错误。
+不接受无绑定 v1 侧文件或路径遍历、类型伪造、超预算、未知父视频等条目。
+不增加 covers.json schema migration；复用 media_covers 的已有投影与版本化鉴权 API（`phash` 列由 Player 侧 `0012` 迁移追加，属 Player 的库，不属本提交合同）。
+内容寻址路径参与已有 cover version，保证新图片使旧 URL 失效。
+
+顺序：核验原包/源文件 → Range 取帧 → 再核验源文件 → 写 JPEG →
+确认远端大小与完整 JPEG SHA-256 → 再核验原包/源文件 → 最后写索引并读回验证。
+续跑验证已登记对象后跳过解码；其他视频条目必须合并保留。
+**回填指纹**：条目已登记、封面校验通过但**没有** `phash` 时不得跳过——重新取帧算哈希；
+若新帧 sha256 与索引一致，**只更新索引、不重写封面文件**（第二次运行应为 0 次取帧），该次运行上报的 covers written 为 0。
+注意续跑窗口：已登记为 done 的任务要等 24 小时才会重新排队，所以补指纹要**换一个全新的 work 目录**（或等窗口过期）跑，否则命令会看似成功却什么都没做。
+不重写已提交 manifest/_COMPLETE、不覆盖原视频或 renditions.json。
+不解码随机网络图，不伪造图片；黑/白空帧、有损/损坏样本或预算不足留作失败。
+
+## 资源与生命周期
+
+每项逐级填充本地稀疏文件的头尾，累计最多 12MiB；支持 moov 在尾部的 MP4，
+不做完整视频下载或全库浏览器解码。HTTP Range 验证 206 Content-Range/实际长度，
+只有覆盖整个小文件的请求才接受 200，拒绝远端忽略 Range 的大响应。
+单 worker，0.5MiB/s，FFmpeg 输入解码与输出编码均显式单线程；容器 0.75 CPU / 768MiB，
+为 4K 参考帧留出有界空间，不提高网络、并发或取样字节预算。采样 180 秒总期限、单命令 12 秒，
+取消杀死子进程、终止传输并清理临时目录。只保留自己的有界 checkpoint/日志。
+单次元数据与 Range I/O 对临时网络错误最多重试三次；错误范围、损坏 JSON 不重试。
+持续模式扫描失败保留检查点，三十秒后重扫，不退出进程；已有任务继续使用已验证绑定，
+每次写入前由 runner 重核。忙碌时最多十分钟刷新发现列表，每批十项后检查到期重试。
+前五次失败至少十分钟冷却，其后 1 / 2 / 4 / 6 小时退避，六小时封顶继续自动重试；
+每批约三分之一名额供失败重试，保留累计次数，不重置成假成功。已完成项一天后复核。
+单个取帧/灰度检查超时尝试下一个有界候选时间，不放宽总采样、下载或内存预算。
+源超过 4GiB、损坏、被删除、全黑帧或超出取样预算可能无法生成，不宣称全覆盖。
+
+所有回归使用 fake/loopback/合成媒体；生产抽样是单独运维动作，日志只输出摘要。
+
+## 权限与删除
+
+图片继续通过 Player 登录鉴权与版本化 /cover 读取，私有缓存和独立并发预算保持。
+读取失败不写远端；采样不是 HTTP GET 的隐式副作用。
+永久删除包括所有已登记包封面，先删图再删视频；图失败则保留原视频。
+删除请求只排队（202，媒体立即隐藏，6 秒内可撤销），由后台单一 worker
+（`application/media_deletion.py`）逐个文件执行，失败按 1 分钟起、最长 1 小时退避重试直到删净，
+不放弃；进度见 `GET /api/v1/media-deletions`。

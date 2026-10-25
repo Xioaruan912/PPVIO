@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.venv/
+.env
+*.env
+!deploy/*.env.example
+data/
+web/node_modules/
+web/dist/
+web/tsconfig.tsbuildinfo
