@@ -20,6 +20,7 @@ import math
 from pathlib import Path
 import secrets
 import signal
+import time
 
 import aiohttp
 from aiohttp import web
@@ -31,6 +32,9 @@ from ppvio.infrastructure.folder_catalog import COVER_FILE, RENDITIONS_DIR
 _LOG = logging.getLogger(__name__)
 HEIGHT = 480
 _CHUNK = 1024 * 1024
+# A failed video waits before its next try; an uploaded one waits for the scan to link it.
+_RETRY_FAILED_SECONDS = 2 * 3600.0
+_WAIT_FOR_SCAN_SECONDS = 30 * 60.0
 
 
 async def _run(*args: str, timeout: float) -> str:
@@ -146,35 +150,49 @@ class RenditionMaker:
         self._is_playing = is_playing
         self._work_dir = work_dir
         self._source = _SourceServer(reader)
-        self._skip: set[tuple[str, object]] = set()  # failed or uploaded, until the scan links the file
+        # (kind, media_id) -> when to try again: uploaded ones until the scan links the file, failed ones after a back-off.
+        self._skip: dict[tuple[str, str], float] = {}
 
     async def run(self, stop: asyncio.Event) -> None:
         self._work_dir.mkdir(parents=True, exist_ok=True)
         await self._source.start()
         try:
             while not stop.is_set():
-                job = None
-                if not self._is_playing():
-                    # Covers first: one seek and one frame, and the wall needs them most.
-                    covers = await self._repository.list_cover_candidates(limit=20)
-                    job = next((("cover", item) for item in covers if ("cover", item["media_id"]) not in self._skip), None)
-                    if job is None:
-                        copies = await self._repository.list_rendition_candidates(limit=20)
-                        job = next((("copy", item) for item in copies if ("copy", item["media_id"]) not in self._skip), None)
+                job = None if self._is_playing() else await self._next_job(time.monotonic())
                 if job is not None:
                     kind, item = job
-                    self._skip.add((kind, item["media_id"]))
+                    failed = True
                     try:
                         await (self.make_cover(item) if kind == "cover" else self.make(item, stop))
+                        failed = False
                     except Exception as exc:
-                        _LOG.warning("player.%s.failed media=%s error=%s",
-                                     kind, str(item["media_id"])[:12], type(exc).__name__)
+                        _LOG.warning("player.%s.failed media=%s error=%s category=%s status=%s",
+                                     kind, str(item["media_id"])[:12], type(exc).__name__,
+                                     getattr(exc, "category", None), getattr(exc, "status_code", None))
+                    self._done(kind, str(item["media_id"]), failed=failed, now=time.monotonic())
                 try:
                     await asyncio.wait_for(stop.wait(), timeout=5 if job else 60)
                 except asyncio.TimeoutError:
                     pass
         finally:
             await self._source.close()
+
+    async def _next_job(self, now: float) -> tuple[str, dict[str, object]] | None:
+        """Covers first (one seek and one frame, and the wall needs them most), then copies.
+
+        Each page asks for as many extra rows as are waiting out a back-off, so failures
+        at the head of the list never hide the videos behind them.
+        """
+        waiting = {key for key, until in self._skip.items() if until > now}
+        for kind, candidates in (("cover", self._repository.list_cover_candidates),
+                                 ("copy", self._repository.list_rendition_candidates)):
+            for item in await candidates(limit=20 + len(waiting)):
+                if (kind, str(item["media_id"])) not in waiting:
+                    return kind, item
+        return None
+
+    def _done(self, kind: str, media_id: str, *, failed: bool, now: float) -> None:
+        self._skip[(kind, media_id)] = now + (_RETRY_FAILED_SECONDS if failed else _WAIT_FOR_SCAN_SECONDS)
 
     async def make(self, job: dict[str, object], stop: asyncio.Event) -> bool:
         media_id = str(job["media_id"])

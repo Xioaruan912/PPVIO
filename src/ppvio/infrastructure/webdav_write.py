@@ -17,6 +17,9 @@ from ppvio.infrastructure.webdav_read import WebDavRangeResponse
 
 
 _CONTENT_TYPE_RE = re.compile(r"^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+$")
+# A slow drive takes minutes to accept a few hundred MB once OpenList has the bytes.
+_UPLOAD_ACK_BYTES_PER_SECOND = 256 * 1024
+_MAX_UPLOAD_ACK_SECONDS = 4 * 3600.0
 
 
 _STAT_BODY = (
@@ -140,6 +143,11 @@ class AioHttpWebDavWriteClient:
             finally:
                 response.release()
 
+    def _upload_timeout(self, size_bytes: int) -> ClientTimeout:
+        # OpenList answers a PUT only after it has passed the whole file on to the drive.
+        wait = max(self._timeout.sock_read or 0.0, size_bytes / _UPLOAD_ACK_BYTES_PER_SECOND)
+        return ClientTimeout(total=None, connect=self._timeout.connect, sock_read=min(wait, _MAX_UPLOAD_ACK_SECONDS))
+
     async def put_stream(
         self,
         path: str,
@@ -167,7 +175,7 @@ class AioHttpWebDavWriteClient:
         response = await self._request(
             "PUT", safe_path, operation="put",
             headers={"Content-Length": str(size_bytes), "Content-Type": content_type},
-            data=counted(),
+            data=counted(), timeout=self._upload_timeout(size_bytes),
         )
         try:
             self._check(response.status, {200, 201, 204}, "put")

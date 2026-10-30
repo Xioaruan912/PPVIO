@@ -127,6 +127,36 @@ class SourceServerTests(unittest.IsolatedAsyncioTestCase):
 
 
 @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "ffmpeg is not installed")
+class Candidates:
+    """The newest first, like the real query, so failures sit at the head of every page."""
+
+    def __init__(self, count: int) -> None:
+        self.rows = [{"media_id": f"{index:064x}"} for index in range(count)]
+
+    async def list_cover_candidates(self, *, limit: int):
+        return []
+
+    async def list_rendition_candidates(self, *, limit: int):
+        return self.rows[:limit]
+
+
+class RenditionMakerQueueTests(unittest.IsolatedAsyncioTestCase):
+    async def test_failed_videos_do_not_block_the_rest_and_are_retried_later(self) -> None:
+        async def libraries():
+            return ()
+
+        maker = RenditionMaker(Candidates(25), BytesReader(b""), work_dir=Path("/nonexistent"),
+                               writer=lambda: None, libraries=libraries, is_playing=lambda: False)
+        for index in range(20):
+            kind, item = await maker._next_job(now=0.0)
+            self.assertEqual((kind, item["media_id"]), ("copy", f"{index:064x}"))
+            maker._done("copy", item["media_id"], failed=True, now=0.0)
+        kind, item = await maker._next_job(now=0.0)
+        self.assertEqual(item["media_id"], f"{20:064x}", "the 21st video is reached after 20 failures")
+        kind, item = await maker._next_job(now=24 * 3600.0)
+        self.assertEqual(item["media_id"], f"{0:064x}", "a failure is retried once its back-off has passed")
+
+
 class RenditionMakerEncodeTests(unittest.IsolatedAsyncioTestCase):
     async def test_a_720p_original_becomes_an_uploaded_480p_copy(self) -> None:
         with TemporaryDirectory() as tmp:

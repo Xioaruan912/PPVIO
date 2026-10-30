@@ -173,6 +173,23 @@ class WebDavWriteTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(receipt.size_bytes, 11)
         self.assertEqual(receipt.etag, '"stored"')
 
+    async def test_put_waits_longer_for_the_store_to_acknowledge_a_large_file(self) -> None:
+        # OpenList answers a PUT only after it has passed the file on to the drive.
+        session = FakeSession(201)
+        client = AioHttpWebDavWriteClient("https://dav.example.test", "u", "p", session=session)
+
+        async def chunks():
+            yield b"x"
+
+        await client.put_stream("root/small.mp4", chunks(), size_bytes=1, content_type="video/mp4")
+        self.assertEqual(session.calls[0][2]["timeout"].sock_read, 60.0)
+        session.status = 201
+        try:
+            await client.put_stream("root/big.mp4", chunks(), size_bytes=400 * 1024 * 1024, content_type="video/mp4")
+        except Exception:
+            pass  # the fake stream is shorter than declared; only the timeout matters here
+        self.assertGreaterEqual(session.calls[1][2]["timeout"].sock_read, 1200.0)
+
     async def test_put_rejects_stream_size_mismatch(self) -> None:
         session = FakeSession(201)
         client = AioHttpWebDavWriteClient("https://dav.example.test", "u", "p", session=session)
