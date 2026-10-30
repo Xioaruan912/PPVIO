@@ -16,6 +16,9 @@ export interface Media {
   deletable: boolean;
   category: "short" | "long";
   variants: Variant[];
+  codec?: string | null;
+  /** The folders the file sits in, nearest first. */
+  groups?: { id: string; label: string }[];
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -87,9 +90,19 @@ export const api = {
   setReadMode: (mode: "webdav" | "direct") => request<{ mode: string }>("/api/v1/settings/read-mode", json("PUT", { mode })),
 };
 
-/** The URL to play: the lowest copy when low-res is preferred and one exists, else the original. */
-export function chooseStream(media: Media, preferLow: boolean): string {
-  if (!preferLow) return media.stream_url;
+let hevc: boolean | undefined;
+/** Safari decodes HEVC; Chrome and Firefox only with the right hardware and OS. */
+export function canPlayHevc(): boolean {
+  hevc ??= document.createElement("video").canPlayType('video/mp4; codecs="hvc1.1.6.L93.B0"') !== "";
+  return hevc;
+}
+
+/**
+ * The URL to play: the lowest copy when low-res is preferred and one exists, else the original.
+ * An HEVC original this browser cannot decode falls back to a copy (they are H.264).
+ */
+export function chooseStream(media: Media, preferLow: boolean, hevcOk = media.codec !== "hevc" || canPlayHevc()): string {
+  if (!preferLow && hevcOk) return media.stream_url;
   const copies = media.variants.filter(v => v.height && v.height < (media.height ?? Infinity));
   copies.sort((a, b) => (a.height ?? 0) - (b.height ?? 0));
   return copies[0]?.stream_url ?? media.stream_url;

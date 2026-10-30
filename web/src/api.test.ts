@@ -12,6 +12,12 @@ describe("chooseStream", () => {
     expect(chooseStream(m, true)).toBe("/480");
     expect(chooseStream(m, false)).toBe("/orig");
   });
+  it("plays a copy instead of HEVC the browser cannot decode", () => {
+    const m = { ...media([{ id: "a", height: 480, label: "480p", stream_url: "/480" }]), codec: "hevc" };
+    expect(chooseStream(m, false, false)).toBe("/480");
+    expect(chooseStream(m, false, true)).toBe("/orig");
+    expect(chooseStream({ ...m, variants: [] }, false, false)).toBe("/orig");
+  });
   it("falls back to the original without copies", () => {
     expect(chooseStream(media([]), true)).toBe("/orig");
   });
