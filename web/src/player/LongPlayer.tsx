@@ -1,4 +1,4 @@
-import { ArrowClockwiseIcon, ArrowCounterClockwiseIcon, CaretLeftIcon, CornersOutIcon, PauseIcon, PlayIcon } from "@phosphor-icons/react";
+import { ArrowClockwiseIcon, ArrowCounterClockwiseIcon, CaretLeftIcon, CornersOutIcon, HeartIcon, PauseIcon, PlayIcon } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { api, chooseStream, type Media } from "../api";
@@ -6,6 +6,7 @@ import { GestureRecognizer } from "../feed/gestures";
 import { setPref, usePrefs } from "../prefs";
 import { formatDuration } from "../ui/Grid";
 import { setLongPlayback, useLocked } from "../ui/privacy";
+import { toast } from "../ui/toast";
 
 const SPEEDS = [1, 1.25, 1.5, 2];
 const SAVE_EVERY_MS = 10_000;
@@ -28,6 +29,8 @@ export function LongPlayer({ media, onClose }: { media: Media; onClose: () => vo
   const [duration, setDuration] = useState(media.duration_seconds ?? 0);
   const [speed, setSpeed] = useState(1);
   const [jump, setJump] = useState<"back" | "forward" | null>(null);
+  const [favorite, setFavorite] = useState(media.favorite);
+  const [failed, setFailed] = useState(false);
   const resume = useRef(0);
   const src = chooseStream(media, prefs.lowRes);
   const hasLow = media.variants.some(v => v.height && v.height < (media.height ?? Infinity));
@@ -61,6 +64,11 @@ export function LongPlayer({ media, onClose }: { media: Media; onClose: () => vo
   const seekBy = (delta: number) => {
     const el = video.current;
     if (el) el.currentTime = Math.max(0, Math.min(el.duration || Infinity, el.currentTime + delta));
+  };
+  const toggleFavorite = () => {
+    const on = !favorite;
+    setFavorite(on);
+    void api.favorite(media.id, on).catch(() => { setFavorite(!on); toast("收藏没保存上，再试一次"); });
   };
   const toggle = () => { const el = video.current; if (el) void (el.paused ? el.play() : el.pause()); };
 
@@ -97,6 +105,7 @@ export function LongPlayer({ media, onClose }: { media: Media; onClose: () => vo
           if (resume.current) event.currentTarget.currentTime = resume.current;
           event.currentTarget.playbackRate = speed;
         }}
+        onError={() => setFailed(true)} onPlaying={() => setFailed(false)}
         onPlay={() => setPlaying(true)} onPause={() => { setPlaying(false); setControls(true); }}
         onTimeUpdate={event => setTime(event.currentTarget.currentTime)} />
 
@@ -105,6 +114,16 @@ export function LongPlayer({ media, onClose }: { media: Media; onClose: () => vo
         onPointerMove={event => gestures.current?.move(event.clientX, event.clientY)}
         onPointerUp={event => gestures.current?.up(event.clientX, performance.now())}
         onPointerCancel={() => gestures.current?.cancel()} />
+
+      {failed && (
+        <div className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 px-6 text-center text-[14px] text-white/80">
+          <p>这个视频在当前浏览器放不了</p>
+          {hasLow && !prefs.lowRes && (
+            <button type="button" onClick={() => { setFailed(false); setPref("lowRes", true); }}
+              className="pointer-events-auto mt-3 rounded-full bg-white/15 px-4 py-2 text-[14px] font-semibold text-white">换低清试试</button>
+          )}
+        </div>
+      )}
 
       <AnimatePresence>
         {jump && (
@@ -118,6 +137,11 @@ export function LongPlayer({ media, onClose }: { media: Media; onClose: () => vo
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <div className="pointer-events-auto flex items-center gap-2 px-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
               <button type="button" onClick={onClose} aria-label="返回" className="grid size-10 place-items-center rounded-full text-white"><CaretLeftIcon size={24} weight="bold" /></button>
+              <span className="flex-1" />
+              <button type="button" onClick={toggleFavorite} aria-label={favorite ? "取消收藏" : "收藏"} aria-pressed={favorite}
+                className="grid size-10 place-items-center rounded-full">
+                <HeartIcon size={26} weight="fill" className={favorite ? "text-accent" : "text-white"} />
+              </button>
             </div>
             <div className="pointer-events-auto px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
               <input type="range" min={0} max={duration || 0} step={1} value={Math.min(time, duration || 0)} aria-label="播放进度"
