@@ -9,8 +9,10 @@ const m = (id: string, category: "short" | "long") => ({ id, category }) as Medi
 
 describe("overlayFor", () => {
   const wall = [m("a", "short"), m("film", "long"), m("b", "short"), m("c", "short")];
-  it("opens a long video in the film player", () => {
-    expect(overlayFor(wall, 1)).toEqual({ kind: "long", media: wall[1] });
+  it("opens a long video in the film player, queued with the other long ones", () => {
+    const films = [m("a", "short"), m("f1", "long"), m("b", "short"), m("f2", "long")];
+    expect(overlayFor(films, 1)).toEqual({ kind: "long", items: [films[1], films[3]], index: 0 });
+    expect(overlayFor(films, 3)).toEqual({ kind: "long", items: [films[1], films[3]], index: 1 });
   });
   it("opens a short clip among the short clips only, at the right place", () => {
     expect(overlayFor(wall, 2)).toEqual({ kind: "clips", items: [wall[0], wall[2], wall[3]], index: 1 });

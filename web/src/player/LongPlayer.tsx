@@ -8,12 +8,13 @@ import { api, chooseStream, type Media } from "../api";
 import { GestureRecognizer } from "../feed/gestures";
 import { MediaActions } from "../feed/MediaActions";
 import { setPref, usePrefs } from "../prefs";
-import { formatDuration } from "../ui/Grid";
+import { announce, Cover, formatDuration } from "../ui/Grid";
 import { setLongPlayback, useLocked } from "../ui/privacy";
 import { toast } from "../ui/toast";
 
 const SPEEDS = [1, 1.25, 1.5, 2];
 const SAVE_EVERY_MS = 10_000;
+const NEXT_IN_SECONDS = 5;
 
 /** Where to resume: a saved position, unless it is at the very start or the very end. */
 export function resumeAt(saved: number | undefined, duration: number | null): number {
@@ -47,7 +48,11 @@ function bufferedEnd(el: HTMLVideoElement): number {
 
 type FullscreenVideo = HTMLVideoElement & { webkitEnterFullscreen?: () => void };
 
-export function LongPlayer({ media, onClose }: { media: Media; onClose: () => void }) {
+export function LongPlayer({ media, next, onClose, onNext }: {
+  media: Media; onClose: () => void;
+  /** The next long video of the wall this one was opened from; it starts by itself when this one ends. */
+  next?: Media; onNext?: () => void;
+}) {
   const prefs = usePrefs();
   const locked = useLocked();
   const root = useRef<HTMLDivElement>(null);
@@ -65,6 +70,7 @@ export function LongPlayer({ media, onClose }: { media: Media; onClose: () => vo
   const [favorite, setFavorite] = useState(media.favorite);
   const [failed, setFailed] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [countdown, setCountdown] = useState<number | null>(null);
   const resume = useRef(0);
   const src = chooseStream(media, prefs.lowRes);
   const hasLow = media.variants.some(v => v.height && v.height < (media.height ?? Infinity));
@@ -117,10 +123,12 @@ export function LongPlayer({ media, onClose }: { media: Media; onClose: () => vo
   const toggleFavorite = () => {
     const on = !favorite;
     setFavorite(on);
-    void api.favorite(media.id, on).catch(() => { setFavorite(!on); toast("收藏没保存上，再试一次"); });
+    announce({ id: media.id, favorite: on });
+    void api.favorite(media.id, on).catch(() => { setFavorite(!on); announce({ id: media.id, favorite: !on }); toast("收藏没保存上，再试一次"); });
   };
   const remove = async () => {
     try { await api.remove(media.id); } catch { toast("删除失败，请稍后再试"); return; }
+    announce({ id: media.id, removed: true });
     onClose();
     toast("已删除", {
       label: "撤销",
@@ -182,6 +190,14 @@ export function LongPlayer({ media, onClose }: { media: Media; onClose: () => vo
     return () => window.removeEventListener("keydown", onKey);
   }, [menu]);
 
+  // Up next: a short countdown that can be cancelled, then the next video of the wall.
+  useEffect(() => {
+    if (countdown === null || !onNext) return;
+    if (countdown <= 0) { onNext(); return; }
+    const timer = setTimeout(() => setCountdown(value => value === null ? null : value - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [countdown, onNext]);
+
   const pct = (value: number) => `${duration ? Math.min(100, (value / duration) * 100) : 0}%`;
 
   return (
@@ -195,7 +211,8 @@ export function LongPlayer({ media, onClose }: { media: Media; onClose: () => vo
         onError={() => { setFailed(true); setLoading(false); }}
         onLoadStart={() => setLoading(true)} onWaiting={() => setLoading(true)} onCanPlay={() => setLoading(false)}
         onPlaying={() => { setFailed(false); setLoading(false); }}
-        onPlay={() => setPlaying(true)} onPause={() => { setPlaying(false); setControls(true); }}
+        onPlay={() => { setPlaying(true); setCountdown(null); }} onPause={() => { setPlaying(false); setControls(true); }}
+        onEnded={() => { if (next && onNext) setCountdown(NEXT_IN_SECONDS); }}
         onProgress={event => setBuffered(bufferedEnd(event.currentTarget))}
         onTimeUpdate={event => { setTime(event.currentTarget.currentTime); setBuffered(bufferedEnd(event.currentTarget)); }} />
 
@@ -281,6 +298,21 @@ export function LongPlayer({ media, onClose }: { media: Media; onClose: () => vo
           </motion.div>
         )}
       </AnimatePresence>
+
+      {countdown !== null && next && (
+        <div className="absolute bottom-[calc(6.5rem+env(safe-area-inset-bottom))] right-4 z-10 flex w-72 max-w-[calc(100%-2rem)] gap-3 rounded-[14px] bg-black/75 p-2.5 text-white backdrop-blur-md" role="status">
+          <div className="relative aspect-video w-24 shrink-0 overflow-hidden rounded-[8px] bg-surface">
+            {next.cover_url && <Cover src={next.cover_url} className={`size-full object-cover ${prefs.coverBlur ? "blur-md" : ""}`} />}
+          </div>
+          <div className="flex min-w-0 flex-1 flex-col justify-between">
+            <p className="text-[13px] text-white/80">{countdown} 秒后播放下一个</p>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => onNext?.()} className="whitespace-nowrap rounded-full bg-accent px-3 py-1 text-[13px] font-semibold">立即播放</button>
+              <button type="button" onClick={() => setCountdown(null)} className="whitespace-nowrap rounded-full bg-white/15 px-3 py-1 text-[13px]">取消</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <MediaActions media={media} open={menu} onClose={() => setMenu(false)} onRemove={media.deletable ? () => void remove() : undefined} />
     </div>

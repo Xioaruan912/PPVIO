@@ -2,7 +2,7 @@ import { CaretLeftIcon, CaretRightIcon, FolderIcon } from "@phosphor-icons/react
 import { useCallback, useEffect, useState } from "react";
 import { api, type LibraryDate, type LibraryFolder, type Media, type Tag } from "../api";
 import { usePrefs } from "../prefs";
-import { BlurToggle, formatDuration, Grid, usePages, WatchedBar } from "../ui/Grid";
+import { BlurToggle, Cover, formatDuration, Grid, usePages, WatchedBar } from "../ui/Grid";
 
 export type Open = (items: Media[], index: number, more?: () => void) => void;
 
@@ -83,8 +83,7 @@ function ContinueRow({ items, onOpen }: { items: Recent[]; onOpen: Open }) {
         {items.map((item, index) => (
           <button key={item.id} type="button" onClick={() => onOpen(items, index)} aria-label={`继续观看第 ${index + 1} 个`}
             className="relative aspect-video w-56 shrink-0 overflow-hidden rounded-[10px] bg-surface text-left">
-            {item.cover_url && <img src={item.cover_url} alt="" loading="lazy" decoding="async"
-              className={`size-full object-cover ${prefs.coverBlur ? "blur-xl scale-110" : ""}`} />}
+            {item.cover_url && <Cover src={item.cover_url} className={`size-full object-cover ${prefs.coverBlur ? "blur-xl scale-110" : ""}`} />}
             <span className="absolute bottom-1.5 left-2 rounded bg-black/55 px-1 text-[11px] tabular-nums text-white">
               剩 {formatDuration((item.duration_seconds ?? 0) - item.position_seconds)}
             </span>

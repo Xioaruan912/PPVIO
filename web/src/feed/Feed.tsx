@@ -1,6 +1,7 @@
 import { ArrowDownIcon, CaretLeftIcon, HeartIcon, TrashIcon } from "@phosphor-icons/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, Unauthorized, type Media } from "../api";
+import { announce } from "../ui/Grid";
 import { toast } from "../ui/toast";
 import { FeedItem } from "./FeedItem";
 
@@ -62,12 +63,14 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, organ
 
   const setFavorite = useCallback((id: string, on: boolean) => {
     setItems(list => list.map(item => item.id === id ? { ...item, favorite: on } : item));
+    announce({ id, favorite: on });
   }, [setItems]);
 
   const remove = useCallback(async (media: Media) => {
     const index = items.findIndex(item => item.id === media.id);
     try { await api.remove(media.id); } catch { toast("删除失败，请稍后再试"); return; }
     setItems(list => list.filter(item => item.id !== media.id));
+    announce({ id: media.id, removed: true });
     toast("已删除", {
       label: "撤销",
       run: () => void api.restore(media.id).then(({ restored }) => {
