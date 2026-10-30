@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Media } from "./api";
 import { overlayFor } from "./App";
-import { resumeAt } from "./player/LongPlayer";
+import { playerKey, resumeAt } from "./player/LongPlayer";
 import { normalizeFolder } from "./Settings";
 import { formatDuration } from "./ui/Grid";
 
@@ -23,6 +23,15 @@ describe("resumeAt", () => {
     expect(resumeAt(5, 5400)).toBe(0);
     expect(resumeAt(5390, 5400)).toBe(0);
     expect(resumeAt(undefined, 5400)).toBe(0);
+  });
+});
+
+describe("playerKey", () => {
+  it("maps YouTube-style keys and ignores the rest", () => {
+    expect([" ", "K", "ArrowLeft", "l", "f", "m", "Escape"].map(playerKey))
+      .toEqual(["toggle", "toggle", "back", "forward", "fullscreen", "mute", "close"]);
+    expect(playerKey("a")).toBeNull();
+    expect(playerKey("Enter")).toBeNull();
   });
 });
 
