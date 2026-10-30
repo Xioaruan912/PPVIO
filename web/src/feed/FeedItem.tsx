@@ -50,6 +50,18 @@ export function FeedItem({ media, active, mounted, onFavorite, onRemove, raised 
 
   useEffect(() => { if (video.current) video.current.muted = prefs.muted; }, [prefs.muted]);
 
+  // Space pauses and m mutes the clip on screen.
+  useEffect(() => {
+    if (!active || menu) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey || event.target instanceof HTMLInputElement) return;
+      if (event.key === " ") { event.preventDefault(); setPaused(value => !value); }
+      else if (event.key.toLowerCase() === "m") setPref("muted", !prefs.muted);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [active, menu, prefs.muted]);
+
   // The progress line follows the playhead every frame while this clip is on screen.
   useEffect(() => {
     if (!active) return;

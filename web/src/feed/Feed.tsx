@@ -47,6 +47,19 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, organ
     return () => observer.disconnect();
   }, [items.length]);
 
+  // On a computer the page does not scroll the clip list by itself: ↑/↓ move a clip.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const el = container.current;
+      const step = event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0;
+      if (!el || !step || event.metaKey || event.ctrlKey || event.altKey || event.target instanceof HTMLInputElement) return;
+      event.preventDefault();
+      el.scrollBy({ top: step * el.clientHeight, behavior: "smooth" });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const setFavorite = useCallback((id: string, on: boolean) => {
     setItems(list => list.map(item => item.id === id ? { ...item, favorite: on } : item));
   }, [setItems]);
