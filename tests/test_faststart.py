@@ -23,13 +23,22 @@ def box(box_type: bytes, payload: bytes = b"") -> bytes:
     return struct.pack(">I", 8 + len(payload)) + box_type + payload
 
 
-def moov_with_offsets(offsets: list[int], *, use_co64: bool = False) -> bytes:
+def hevc_entry(tag: bytes, nal_types: tuple[int, ...] = (32, 33, 34)) -> bytes:
+    """A visual sample entry whose hvcC carries one NAL unit of each given type."""
+    arrays = b"".join(bytes([0x80 | nal]) + struct.pack(">HH", 1, 2) + b"\x40\x01" for nal in nal_types)
+    hvcc = box(b"hvcC", b"\x01" + bytes(21) + bytes([len(nal_types)]) + arrays)
+    return box(tag, bytes(78) + hvcc)
+
+
+def moov_with_offsets(offsets: list[int], *, use_co64: bool = False, sample_entry: bytes | None = None) -> bytes:
     if use_co64:
         entries = b"".join(struct.pack(">Q", value) for value in offsets)
         table = box(b"co64", b"\x00\x00\x00\x00" + struct.pack(">I", len(offsets)) + entries)
     else:
         entries = b"".join(struct.pack(">I", value) for value in offsets)
         table = box(b"stco", b"\x00\x00\x00\x00" + struct.pack(">I", len(offsets)) + entries)
+    if sample_entry is not None:
+        table = box(b"stsd", b"\x00\x00\x00\x00" + struct.pack(">I", 1) + sample_entry) + table
     stbl = box(b"stbl", table)
     minf = box(b"minf", stbl)
     mdia = box(b"mdia", minf)
@@ -46,14 +55,16 @@ def stco_offsets(moov: bytes) -> list[int]:
     return [int.from_bytes(moov[start + i * 4 : start + i * 4 + 4], "big") for i in range(count)]
 
 
-def make_nonfaststart(offsets: list[int] | None = None, *, use_co64: bool = False) -> tuple[bytes, list[int]]:
+def make_nonfaststart(
+    offsets: list[int] | None = None, *, use_co64: bool = False, sample_entry: bytes | None = None
+) -> tuple[bytes, list[int]]:
     ftyp = box(b"ftyp", b"isom" + b"\x00\x00\x02\x00" + b"isomiso2avc1mp41")
     mdat_payload = bytes(range(100))
     mdat = box(b"mdat", mdat_payload)
     if offsets is None:
         data_start = len(ftyp) + 8
         offsets = [data_start, data_start + 10, data_start + 20]
-    moov = moov_with_offsets(offsets, use_co64=use_co64)
+    moov = moov_with_offsets(offsets, use_co64=use_co64, sample_entry=sample_entry)
     return ftyp + mdat + moov, offsets
 
 
@@ -138,6 +149,21 @@ class FaststartOverlayTests(unittest.IsolatedAsyncioTestCase):
         overlay = await build_overlay(len(buffer), "video/mp4", reader_for(buffer))
         self.assertIsNone(overlay)
 
+    async def test_hev1_with_parameter_sets_is_served_as_hvc1(self) -> None:
+        # Safari refuses hev1 and only plays HEVC tagged hvc1.
+        buffer, offsets = make_nonfaststart(sample_entry=hevc_entry(b"hev1"))
+        overlay = await build_overlay(len(buffer), "video/mp4", reader_for(buffer))
+        assert overlay is not None
+        self.assertIn(b"hvc1", overlay.moov)
+        self.assertNotIn(b"hev1", overlay.moov)
+        self.assertEqual(stco_offsets(overlay.moov), [value + overlay.moov_len for value in offsets])
+
+    async def test_hev1_without_parameter_sets_keeps_its_tag(self) -> None:
+        buffer, _ = make_nonfaststart(sample_entry=hevc_entry(b"hev1", nal_types=(32, 33)))
+        overlay = await build_overlay(len(buffer), "video/mp4", reader_for(buffer))
+        assert overlay is not None
+        self.assertIn(b"hev1", overlay.moov)
+
     async def test_non_mp4_mime_is_ignored(self) -> None:
         buffer, _ = make_nonfaststart()
         self.assertIsNone(await build_overlay(len(buffer), "image/jpeg", reader_for(buffer)))
@@ -196,6 +222,22 @@ class FaststartStoreTests(unittest.TestCase):
                 (32, head, b"moovdata", 1000, "video/mp4"),
             )
             self.assertIsNone(store.load("b" * 64))
+
+    def test_overlay_cached_before_the_retag_is_upgraded_on_load(self) -> None:
+        from ppvio.application.faststart import FaststartOverlay
+
+        with TemporaryDirectory() as temporary:
+            store = FaststartStore(Path(temporary) / "faststart")
+            moov = moov_with_offsets([100], sample_entry=hevc_entry(b"hev1"))
+            store.save("a" * 64, FaststartOverlay(prefix_len=4, head=b"PPPP" + moov, size=1000, mime="video/mp4"))
+            service = FaststartService(store, repository=None, reader=None)
+            overlay = service.peek("a" * 64, {"mime_type": "video/mp4"})
+            assert overlay is not None
+            self.assertIn(b"hvc1", overlay.moov)
+            self.assertEqual(len(overlay.head), 4 + len(moov))
+            saved = store.load("a" * 64)
+            assert saved is not None
+            self.assertNotIn(b"hev1", saved.head)
 
 
 class FaststartHttpTests(unittest.IsolatedAsyncioTestCase):

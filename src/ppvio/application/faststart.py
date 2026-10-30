@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import logging
 
 _LOG = logging.getLogger("ppvio.faststart")
@@ -13,6 +13,8 @@ _MP4_MIME = frozenset(
 )
 _CONTAINER_BOXES = frozenset({b"moov", b"trak", b"mdia", b"minf", b"stbl", b"mvex"})
 _HEAD_WINDOW_BYTES = 64 * 1024
+_VISUAL_SAMPLE_ENTRY_FIELDS = 78
+_HEVC_PARAMETER_SETS = frozenset({32, 33, 34})  # VPS, SPS, PPS
 
 ReadRange = Callable[[int, int], Awaitable[bytes]]
 
@@ -130,6 +132,65 @@ def _patch_chunk_offsets(
     return patched if walk(0, len(moov)) else None
 
 
+def _hvcc_has_parameter_sets(hvcc: bytes) -> bool:
+    if len(hvcc) < 23:
+        return False
+    found: set[int] = set()
+    position = 23
+    for _ in range(hvcc[22]):
+        if position + 3 > len(hvcc):
+            return False
+        nal_type = hvcc[position] & 0x3F
+        count = int.from_bytes(hvcc[position + 1 : position + 3], "big")
+        position += 3
+        for _ in range(count):
+            if position + 2 > len(hvcc):
+                return False
+            position += 2 + int.from_bytes(hvcc[position : position + 2], "big")
+        if position > len(hvcc):
+            return False
+        if count:
+            found.add(nal_type)
+    return _HEVC_PARAMETER_SETS <= found
+
+
+def retag_hevc(moov: bytearray) -> int:
+    """Rename ``hev1`` sample entries to ``hvc1``; returns how many were renamed.
+
+    Safari only plays HEVC tagged ``hvc1``. The bitstream is unchanged, so this
+    is safe whenever ``hvcC`` already carries the VPS, SPS and PPS.
+    """
+    renamed = 0
+
+    def boxes(start: int, end: int):
+        position = start
+        while position + 8 <= end:
+            size = int.from_bytes(moov[position : position + 4], "big")
+            if size < 8 or position + size > end:
+                return
+            yield position, bytes(moov[position + 4 : position + 8]), size
+            position += size
+
+    def walk(start: int, end: int) -> None:
+        nonlocal renamed
+        for position, box_type, size in boxes(start, end):
+            if box_type in _CONTAINER_BOXES:
+                walk(position + 8, position + size)
+            elif box_type == b"stsd":
+                for entry, entry_type, entry_size in boxes(position + 16, position + size):
+                    if entry_type != b"hev1":
+                        continue
+                    children = entry + 8 + _VISUAL_SAMPLE_ENTRY_FIELDS
+                    for child, child_type, child_size in boxes(children, entry + entry_size):
+                        if child_type == b"hvcC" and _hvcc_has_parameter_sets(bytes(moov[child + 8 : child + child_size])):
+                            moov[entry + 4 : entry + 8] = b"hvc1"
+                            renamed += 1
+                            break
+
+    walk(0, len(moov))
+    return renamed
+
+
 async def build_overlay(size: int, mime: str, read: ReadRange) -> FaststartOverlay | None:
     """Build a virtual faststart overlay, or ``None`` when it is unnecessary/unsafe.
 
@@ -204,6 +265,9 @@ async def build_overlay(size: int, mime: str, read: ReadRange) -> FaststartOverl
     tracks = _patch_chunk_offsets(patched, moov_size, first_mdat, moov_start)
     if tracks is None or tracks == 0:
         return None
+    # shortcut: only overlays (moov at the end) are retagged; HEVC files that are
+    # already faststart still stream hev1 as-is. Add an in-place overlay if any show up.
+    retag_hevc(patched)
     prefix = head[:first_mdat]
     if len(prefix) != first_mdat:
         raise FaststartReadError("short prefix read")
@@ -286,6 +350,11 @@ class FaststartService:
         if overlay is None:
             overlay = self._store.load(media_id)
             if overlay is not None:
+                # Overlays saved before the hvc1 retag existed are upgraded once.
+                moov = bytearray(overlay.moov)
+                if retag_hevc(moov):
+                    overlay = replace(overlay, head=overlay.head[: overlay.prefix_len] + bytes(moov))
+                    self._store.save(media_id, overlay)
                 self._remember(media_id, overlay)
         return overlay
 
