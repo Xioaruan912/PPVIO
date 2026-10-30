@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { chooseStream, type Media } from "./api";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { api, chooseStream, type Media } from "./api";
 
 const media = (variants: Media["variants"]): Media => ({
   id: "m", width: 1920, height: 1080, duration_seconds: 30, stream_url: "/orig", cover_url: null,
@@ -20,5 +20,13 @@ describe("chooseStream", () => {
   });
   it("falls back to the original without copies", () => {
     expect(chooseStream(media([]), true)).toBe("/orig");
+  });
+});
+
+describe("request", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it("treats 204 No Content as success", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 204 })));
+    await expect(api.addToCollection("c", "m")).resolves.toBeUndefined();
   });
 });

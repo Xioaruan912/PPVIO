@@ -26,6 +26,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     headers: { ...(init.body ? { "Content-Type": "application/json" } : {}), ...init.headers } });
   if (response.status === 401) throw new Unauthorized();
   if (!response.ok) throw new Error(`${response.status} ${await response.text().catch(() => "")}`.trim());
+  if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
 
