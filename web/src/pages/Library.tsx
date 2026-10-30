@@ -1,13 +1,17 @@
 import { CaretLeftIcon, CaretRightIcon, FolderIcon } from "@phosphor-icons/react";
 import { useCallback, useEffect, useState } from "react";
 import { api, type LibraryDate, type LibraryFolder, type Media, type Tag } from "../api";
-import { BlurToggle, Grid, usePages } from "../ui/Grid";
+import { usePrefs } from "../prefs";
+import { BlurToggle, formatDuration, Grid, usePages, WatchedBar } from "../ui/Grid";
 
 export type Open = (items: Media[], index: number, more?: () => void) => void;
 
 type View = "short" | "long" | "folders";
 
-export function Library({ onOpen }: { onOpen: Open }) {
+type Recent = Media & { position_seconds: number };
+
+/** ``refresh`` changes whenever a player closes, so watch progress is re-read. */
+export function Library({ onOpen, refresh = 0 }: { onOpen: Open; refresh?: number }) {
   const [view, setView] = useState<View>("short");
   const [folder, setFolder] = useState<LibraryFolder | null>(null);
   return (
@@ -27,22 +31,32 @@ export function Library({ onOpen }: { onOpen: Open }) {
                 className={`h-9 flex-1 rounded-full text-[14px] transition ${view === key ? "bg-raised font-semibold text-ink" : "text-muted"}`}>{label}</button>
             ))}
           </div>
-          {view === "folders" ? <Folders onPick={setFolder} /> : <CategoryWall category={view} onOpen={onOpen} />}
+          {view === "folders" ? <Folders onPick={setFolder} /> : <CategoryWall category={view} onOpen={onOpen} refresh={refresh} />}
         </>
       )}
     </main>
   );
 }
 
-function CategoryWall({ category, onOpen }: { category: "short" | "long"; onOpen: Open }) {
+function CategoryWall({ category, onOpen, refresh }: { category: "short" | "long"; onOpen: Open; refresh: number }) {
   const [tags, setTags] = useState<Tag[]>([]);
   const [tag, setTag] = useState<number | null>(null);
+  const [recent, setRecent] = useState<Recent[]>([]);
+  const [progress, setProgress] = useState<Map<string, number>>(new Map());
   useEffect(() => { void api.tags().then(t => setTags(t.items.filter(x => x.count > 0))).catch(() => undefined); }, []);
+  useEffect(() => {
+    if (category !== "long") return;
+    void api.longProgress().then(p => {
+      setRecent(p.recent_items);
+      setProgress(new Map(p.items.map(i => [i.id, i.position_seconds])));
+    }).catch(() => undefined);
+  }, [category, refresh]);
   const fetchPage = useCallback((_: string | null, offset: number) => api.videos(category, offset, 20, tag), [category, tag]);
   const pages = usePages(fetchPage, `${category}:${tag}`);
   useEffect(() => { void pages.more(); }, [category, tag]);
   return (
     <>
+      {category === "long" && tag === null && recent.length > 0 && <ContinueRow items={recent} onOpen={onOpen} />}
       {tags.length > 0 && (
         <div className="-mx-3 mb-3 flex gap-2 overflow-x-auto px-3 [scrollbar-width:none]">
           {[{ id: null, name: "全部" } as { id: number | null; name: string }, ...tags].map(t => (
@@ -53,9 +67,32 @@ function CategoryWall({ category, onOpen }: { category: "short" | "long"; onOpen
       )}
       {pages.error && !pages.items.length ? <Empty>加载失败，稍后再试</Empty>
         : pages.done && !pages.items.length ? <Empty>{tag !== null ? "这个标签下还没有视频" : category === "long" ? "还没有长视频" : "还没有短视频"}</Empty>
-        : <Grid items={pages.items} wide={category === "long"} done={pages.done} onEnd={() => void pages.more()}
+        : <Grid items={pages.items} wide={category === "long"} progress={category === "long" ? progress : undefined} done={pages.done} onEnd={() => void pages.more()}
             onOpen={index => onOpen(pages.items, index, () => void pages.more())} />}
     </>
+  );
+}
+
+/** 继续观看: long videos left part-way, newest first. */
+function ContinueRow({ items, onOpen }: { items: Recent[]; onOpen: Open }) {
+  const prefs = usePrefs();
+  return (
+    <section className="mb-5">
+      <h2 className="mb-2 px-1 text-[15px] font-semibold">继续观看</h2>
+      <div className="-mx-3 flex gap-2 overflow-x-auto px-3 [scrollbar-width:none]">
+        {items.map((item, index) => (
+          <button key={item.id} type="button" onClick={() => onOpen(items, index)} aria-label={`继续观看第 ${index + 1} 个`}
+            className="relative aspect-video w-56 shrink-0 overflow-hidden rounded-[10px] bg-surface text-left">
+            {item.cover_url && <img src={item.cover_url} alt="" loading="lazy" decoding="async"
+              className={`size-full object-cover ${prefs.coverBlur ? "blur-xl scale-110" : ""}`} />}
+            <span className="absolute bottom-1.5 left-2 rounded bg-black/55 px-1 text-[11px] tabular-nums text-white">
+              剩 {formatDuration((item.duration_seconds ?? 0) - item.position_seconds)}
+            </span>
+            <WatchedBar seconds={item.position_seconds} duration={item.duration_seconds} />
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 

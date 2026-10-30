@@ -10,9 +10,9 @@ export function formatDuration(seconds: number | null): string {
   return h ? `${h}:${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}` : `${m}:${String(r).padStart(2, "0")}`;
 }
 
-/** A wall of covers; reaching its end asks for the next page. */
-export function Grid({ items, onOpen, onEnd, done, wide }: {
-  items: Media[]; onOpen: (index: number) => void; onEnd: () => void; done: boolean; wide?: boolean;
+/** A wall of covers; reaching its end asks for the next page. ``progress`` maps id to seconds watched. */
+export function Grid({ items, onOpen, onEnd, done, wide, progress }: {
+  items: Media[]; onOpen: (index: number) => void; onEnd: () => void; done: boolean; wide?: boolean; progress?: Map<string, number>;
 }) {
   const prefs = usePrefs();
   const sentinel = useRef<HTMLDivElement>(null);
@@ -32,11 +32,22 @@ export function Grid({ items, onOpen, onEnd, done, wide }: {
             {item.cover_url && <img src={item.cover_url} alt="" loading="lazy" decoding="async"
               className={`size-full object-cover transition-[filter] duration-300 ${prefs.coverBlur ? "blur-xl scale-110" : ""}`} />}
             <span className="absolute bottom-1 right-1.5 rounded bg-black/55 px-1 text-[11px] tabular-nums text-white">{formatDuration(item.duration_seconds)}</span>
+            <WatchedBar seconds={progress?.get(item.id)} duration={item.duration_seconds} />
           </button>
         ))}
       </div>
       {!done && <div ref={sentinel} className="h-10" />}
     </>
+  );
+}
+
+/** How far into a video the owner got, as a thin line along the bottom of its cover. */
+export function WatchedBar({ seconds, duration }: { seconds: number | undefined; duration: number | null }) {
+  if (!seconds || !duration) return null;
+  return (
+    <span className="absolute inset-x-0 bottom-0 h-[3px] bg-white/25">
+      <span className="block h-full bg-accent" style={{ width: `${Math.min(100, (seconds / duration) * 100)}%` }} />
+    </span>
   );
 }
 

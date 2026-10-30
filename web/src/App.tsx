@@ -27,6 +27,8 @@ export function App() {
   const [authed, setAuthed] = useState(true);
   const [tab, setTab] = useState<Tab>("feed");
   const [overlay, setOverlay] = useState<Overlay>(null);
+  const [closed, setClosed] = useState(0);
+  const close = useCallback(() => { setOverlay(null); setClosed(n => n + 1); }, []);
   const onUnauthorized = useCallback(() => setAuthed(false), []);
   const open = useCallback((items: Media[], index: number) => setOverlay(overlayFor(items, index)), []);
 
@@ -34,12 +36,12 @@ export function App() {
   return (
     <>
       {tab === "feed" && !overlay && <Feed onUnauthorized={onUnauthorized} />}
-      {tab === "library" && <Library onOpen={open} />}
+      {tab === "library" && <Library onOpen={open} refresh={closed} />}
       {tab === "favorites" && <Favorites onOpen={open} />}
       {tab === "settings" && <Settings onLoggedOut={onUnauthorized} onDuplicates={() => setOverlay({ kind: "duplicates" })} />}
 
-      {overlay?.kind === "clips" && <OverlayClips items={overlay.items} start={overlay.index} onClose={() => setOverlay(null)} />}
-      {overlay?.kind === "long" && <LongPlayer media={overlay.media} onClose={() => setOverlay(null)} />}
+      {overlay?.kind === "clips" && <OverlayClips items={overlay.items} start={overlay.index} onClose={close} />}
+      {overlay?.kind === "long" && <LongPlayer key={overlay.media.id} media={overlay.media} onClose={close} />}
       {overlay?.kind === "duplicates" && <Duplicates onClose={() => setOverlay(null)} />}
 
       {!overlay && (
