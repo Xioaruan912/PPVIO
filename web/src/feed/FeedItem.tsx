@@ -1,11 +1,12 @@
 import { DotsThreeIcon, HeartIcon, SpeakerHighIcon, SpeakerSlashIcon, PlayIcon } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, chooseStream, type Media } from "../api";
 import { setPref, usePrefs } from "../prefs";
 import { useLocked } from "../ui/privacy";
 import { GestureRecognizer } from "./gestures";
 import { MediaActions } from "./MediaActions";
+import { useFeedPlayback, type BufferReadiness } from "./useFeedPlayback";
 
 interface Props {
   media: Media;
@@ -13,6 +14,8 @@ interface Props {
   active: boolean;
   /** Mount the video element (on screen or one away), so the next clip is already buffering. */
   mounted: boolean;
+  eager?: boolean;
+  onBufferReadiness?: BufferReadiness;
   onFavorite: (id: string, on: boolean) => void;
   /** Present when the server allows deleting this clip. */
   onRemove?: (media: Media) => void;
@@ -22,7 +25,7 @@ interface Props {
 
 interface Burst { id: number; x: number; y: number }
 
-export function FeedItem({ media, active, mounted, onFavorite, onRemove, raised = false }: Props) {
+export function FeedItem({ media, active, mounted, eager = false, onBufferReadiness, onFavorite, onRemove, raised = false }: Props) {
   const prefs = usePrefs();
   const locked = useLocked();
   const [menu, setMenu] = useState(false);
@@ -38,15 +41,19 @@ export function FeedItem({ media, active, mounted, onFavorite, onRemove, raised 
   const landscape = (media.width ?? 9) > (media.height ?? 16);
   const src = chooseStream(media, prefs.lowRes);
   const hasLow = media.variants.some(v => v.height && v.height < (media.height ?? Infinity));
+  const onPause = useCallback(() => setPaused(true), []);
+  const { attachVideo, visible } = useFeedPlayback(video, {
+    media, src, active, mounted, eager, paused, locked, onPause, onBufferReadiness,
+  });
 
   // Play only the clip on screen; a clip that leaves the screen starts over next time.
   useEffect(() => {
+    if (active) return;
+    setPaused(false); setFast(false); setMenu(false);
     const el = video.current;
     if (!el) return;
-    if (active && !paused && !locked) void el.play().catch(() => setPaused(true));
-    else el.pause();
-    if (!active) { el.currentTime = 0; setPaused(false); el.playbackRate = 1; setFast(false); setMenu(false); }
-  }, [active, paused, src, locked]);
+    el.currentTime = 0; el.playbackRate = 1;
+  }, [active, mounted, src]);
 
   useEffect(() => { if (video.current) video.current.muted = prefs.muted; }, [prefs.muted]);
 
@@ -110,8 +117,9 @@ export function FeedItem({ media, active, mounted, onFavorite, onRemove, raised 
         <img src={media.cover_url} alt="" aria-hidden className="absolute inset-0 size-full scale-110 object-cover opacity-50 blur-2xl" />
       )}
       {mounted ? (
-        <video ref={video} src={src} poster={media.cover_url ?? undefined} playsInline loop muted={prefs.muted}
-          preload={active ? "auto" : "metadata"} onError={() => setFailed(true)} onPlaying={() => setFailed(false)}
+        <video ref={attachVideo} src={src} poster={media.cover_url ?? undefined} playsInline loop muted={prefs.muted}
+          preload={!locked && visible && (active || eager) ? "auto" : "metadata"}
+          onError={() => setFailed(true)} onPlaying={() => setFailed(false)}
           className={`absolute inset-0 size-full ${landscape ? "object-contain" : "object-cover"}`} />
       ) : media.cover_url ? (
         <img src={media.cover_url} alt="" className={`absolute inset-0 size-full ${landscape ? "object-contain" : "object-cover"}`} />

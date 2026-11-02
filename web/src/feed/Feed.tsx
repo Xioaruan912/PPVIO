@@ -1,9 +1,11 @@
 import { ArrowDownIcon, CaretLeftIcon, HeartIcon, TrashIcon } from "@phosphor-icons/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { api, Unauthorized, type Media } from "../api";
+import { api, chooseStream, Unauthorized, type Media } from "../api";
+import { usePrefs } from "../prefs";
 import { announce } from "../ui/Grid";
 import { toast } from "../ui/toast";
 import { FeedItem } from "./FeedItem";
+import type { BufferReadiness } from "./useFeedPlayback";
 
 /** Append new clips, never one already in the list. */
 export function mergeFeed(current: Media[], incoming: Media[]): Media[] {
@@ -26,6 +28,19 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, organ
 }) {
   const [active, setActive] = useState(start);
   const container = useRef<HTMLDivElement>(null);
+  const prefs = usePrefs();
+  const [preloadFor, setPreloadFor] = useState<{ id: string; src: string } | null>(null);
+  const current = items[active];
+  const currentSrc = current ? chooseStream(current, prefs.lowRes) : "";
+  const currentSource = useRef({ id: current?.id, src: currentSrc });
+  currentSource.current = { id: current?.id, src: currentSrc };
+  const onBufferReadiness = useCallback<BufferReadiness>((id, src, ready) => {
+    if (id !== currentSource.current.id || src !== currentSource.current.src) return;
+    setPreloadFor(previous => ready
+      ? previous?.id === id && previous.src === src ? previous : { id, src }
+      : previous === null ? previous : null);
+  }, []);
+  const preloadNext = preloadFor?.id === current?.id && preloadFor?.src === currentSrc;
 
   // Open on the clip that was tapped.
   useLayoutEffect(() => {
@@ -41,7 +56,10 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, organ
     if (!root) return;
     const observer = new IntersectionObserver(entries => {
       for (const entry of entries) {
-        if (entry.isIntersecting) setActive(Number((entry.target as HTMLElement).dataset.index));
+        if (entry.isIntersecting) {
+          setPreloadFor(null);
+          setActive(Number((entry.target as HTMLElement).dataset.index));
+        }
       }
     }, { root, threshold: 0.6 });
     root.querySelectorAll<HTMLElement>("[data-index]").forEach(el => observer.observe(el));
@@ -81,7 +99,6 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, organ
   }, [items, setItems]);
 
   const next = () => container.current?.scrollBy({ top: container.current.clientHeight, behavior: "smooth" });
-  const current = items[active];
 
   return (
     <div ref={container} className="h-dvh snap-y snap-mandatory overflow-y-scroll [scrollbar-width:none]">
@@ -104,6 +121,7 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, organ
       {items.map((item, index) => (
         <div key={item.id} data-index={index}>
           <FeedItem media={item} active={index === active} mounted={Math.abs(index - active) <= 1}
+            eager={index === active + 1 && preloadNext} onBufferReadiness={onBufferReadiness}
             onFavorite={setFavorite} onRemove={item.deletable ? remove : undefined} raised={organize} />
         </div>
       ))}
