@@ -7,6 +7,13 @@ const probe = (end: number, currentTime = 0, duration = 60, playbackRate = 1) =>
 });
 
 describe("next video preload budget", () => {
+  it("lets brief clips prepare the next one without waiting for a twelve-second reserve", () => {
+    expect(allowNextPreload(probe(2.2, 0, 16), false)).toBe(true);
+    expect(allowNextPreload(probe(1.4, 0, 16), true)).toBe(false);
+    expect(allowNextPreload(probe(3.5, 0, 16, 2), false)).toBe(false);
+    expect(allowNextPreload(probe(4.5, 0, 16, 2), false)).toBe(true);
+    expect(allowNextPreload(probe(3, 0, 120), false)).toBe(false);
+  });
   it("uses only the range containing the playhead, not data beyond a seek gap", () => {
     const video = { ...probe(30, 10), buffered: {
       length: 2, start: (i: number) => [0, 20][i], end: (i: number) => [5, 30][i],
@@ -18,7 +25,7 @@ describe("next video preload budget", () => {
   it("has separate start and stop watermarks to avoid discarding preload on every fluctuation", () => {
     expect(allowNextPreload(probe(13), false)).toBe(true);
     expect(allowNextPreload(probe(6), true)).toBe(true);
-    expect(allowNextPreload(probe(3), true)).toBe(false);
+    expect(allowNextPreload(probe(2), true)).toBe(false);
     expect(allowNextPreload(probe(6), false)).toBe(false);
   });
 
@@ -32,8 +39,8 @@ describe("next video preload budget", () => {
 
   it("allows short clips buffered to their end and accounts for double-speed playback", () => {
     expect(allowNextPreload(probe(3, 0, 3), false)).toBe(true);
-    expect(allowNextPreload(probe(15, 0, 60, 2), false)).toBe(false);
-    expect(allowNextPreload(probe(26, 0, 60, 2), false)).toBe(true);
+    expect(allowNextPreload(probe(14, 0, 60, 2), false)).toBe(false);
+    expect(allowNextPreload(probe(16, 0, 60, 2), false)).toBe(true);
   });
 
   it("does not grant eager loading for an unready or invalid media timeline", () => {

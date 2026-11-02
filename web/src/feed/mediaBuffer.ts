@@ -20,7 +20,8 @@ export function allowNextPreload(video: BufferProbe, wasAllowed: boolean, bytesP
   const ahead = bufferedAhead(video);
   const remaining = Math.max(0, video.duration - video.currentTime);
   if (remaining > 0 && ahead >= remaining - 0.1) return true;
-  const high = preloadHighWater(bytesPerSecond);
+  // A 12-second reserve starves preloading on brief clips before the viewer swipes.
+  const high = Math.min(preloadHighWater(bytesPerSecond), Math.max(2, video.duration / 8));
   const reserve = wasAllowed ? Math.max(1.5, high / 3) : high;
   return ahead / Math.max(1, video.playbackRate) >= reserve;
 }
