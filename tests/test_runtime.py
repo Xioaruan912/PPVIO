@@ -27,6 +27,19 @@ def player_env(**overrides: str) -> dict[str, str]:
 
 
 class PlayerRuntimeSettingsTests(unittest.TestCase):
+    def test_cache_maintenance_settings_are_bounded_and_can_be_disabled(self) -> None:
+        settings = PlayerSettings.from_env(player_env())
+        self.assertEqual(settings.cache_max_age_seconds, 7 * 86400)
+        self.assertEqual(settings.cache_min_free_bytes, 1024 ** 3)
+        disabled = PlayerSettings.from_env(player_env(
+            PPVIO_CACHE_MAX_AGE_SECONDS="0", PPVIO_CACHE_MIN_FREE_BYTES="0",
+        ))
+        self.assertEqual(disabled.cache_max_age_seconds, 0)
+        self.assertEqual(disabled.cache_min_free_bytes, 0)
+        for name in ("PPVIO_CACHE_MAX_AGE_SECONDS", "PPVIO_CACHE_MIN_FREE_BYTES"):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                PlayerSettings.from_env(player_env(**{name: "-1"}))
+
     def test_the_cover_mirror_is_on_by_default_and_bounded(self) -> None:
         settings = PlayerSettings.from_env(player_env())
         self.assertTrue(settings.cover_mirror, "the mirror is on unless it is turned off")

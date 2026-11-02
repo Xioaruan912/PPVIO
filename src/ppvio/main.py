@@ -8,6 +8,7 @@ import os
 import shutil
 from pathlib import Path
 import signal
+from collections.abc import Callable
 from urllib.parse import urlsplit
 
 from aiohttp import web
@@ -84,6 +85,8 @@ class PlayerSettings:
     # Optional: the same WebDAV reached without the public internet, for a Player
     # on the same host or network as OpenList (e.g. http://host.docker.internal:5244/dav).
     webdav_internal_url: str = ""
+    cache_max_age_seconds: int = 7 * 86400
+    cache_min_free_bytes: int = 1024 ** 3
 
     @classmethod
     def from_env(cls, environ: dict[str, str] | None = None) -> "PlayerSettings":
@@ -134,6 +137,8 @@ class PlayerSettings:
             openlist_api_url=cls._optional_url(get("OPENLIST_API_URL"), "OPENLIST_API_URL"),
             direct_user_agent=get("DIRECT_USER_AGENT") or DEFAULT_USER_AGENT,
             webdav_internal_url=cls._optional_url(get("WEBDAV_INTERNAL_URL"), "WEBDAV_INTERNAL_URL"),
+            cache_max_age_seconds=cls._integer(get("CACHE_MAX_AGE_SECONDS") or "604800", "CACHE_MAX_AGE_SECONDS", 0, 365 * 86400),
+            cache_min_free_bytes=cls._integer(get("CACHE_MIN_FREE_BYTES") or str(1024 ** 3), "CACHE_MIN_FREE_BYTES", 0, 1024 ** 4),
         )
 
     @staticmethod
@@ -248,6 +253,21 @@ async def _collection_backup_poll(
                 )
         except Exception:
             _LOG.exception("Player collection backup worker failed")
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=seconds)
+        except asyncio.TimeoutError:
+            pass
+
+
+async def _cache_maintenance_poll(
+    store: RangeStore, is_playing: Callable[[], bool], stop: asyncio.Event, *, seconds: float = 60,
+) -> None:
+    while not stop.is_set():
+        if not is_playing():
+            try:
+                store.maintain()
+            except OSError:
+                _LOG.warning("Player cache maintenance failed; will retry", exc_info=True)
         try:
             await asyncio.wait_for(stop.wait(), timeout=seconds)
         except asyncio.TimeoutError:
@@ -373,15 +393,18 @@ async def run(settings: PlayerSettings) -> None:
         )
         server_ref: list[object | None] = [None]
         cover_mirror, cover_mirror_counters = build_cover_mirror(settings)
+        range_store = RangeStore(
+            settings.data_dir / "cache",
+            chunk_bytes=settings.cache_chunk_mb * 1024 * 1024,
+            max_bytes=settings.cache_bytes,
+            # The warmed head of a clip is its own tier with half the budget.
+            head_chunks=max(1, -(-settings.warm_head_mb // settings.cache_chunk_mb)) if settings.warm_all else 0,
+            head_share=0.5,
+            max_age_seconds=settings.cache_max_age_seconds,
+            min_free_bytes=settings.cache_min_free_bytes,
+        )
         range_cache = MediaRangeCache(
-            RangeStore(
-                settings.data_dir / "cache",
-                chunk_bytes=settings.cache_chunk_mb * 1024 * 1024,
-                max_bytes=settings.cache_bytes,
-                # The warmed head of a clip is its own tier with half the budget.
-                head_chunks=max(1, -(-settings.warm_head_mb // settings.cache_chunk_mb)) if settings.warm_all else 0,
-                head_share=0.5,
-            ),
+            range_store,
             reader,
             window_bytes=settings.cache_window_mb * 1024 * 1024,
             concurrency=settings.cache_concurrency,
@@ -424,6 +447,7 @@ async def run(settings: PlayerSettings) -> None:
             asyncio.create_task(_catalog_poll(sync, catalog_source, settings.catalog_poll_seconds, stop, sync_status)),
             asyncio.create_task(_favorite_sync_poll(favorite_backup, 5, stop)),
             asyncio.create_task(_collection_backup_poll(collection_backup, 5, stop)),
+            asyncio.create_task(_cache_maintenance_poll(range_store, lambda: server.active_playback_streams > 0, stop)),
         ]
         # Plain files arrive without a duration; read it from the MP4 header, paused while playing.
         probe = MediaProbeBackfill(repository, reader, should_pause=lambda: server.active_playback_streams > 0)

@@ -155,7 +155,7 @@ class MediaRangeCache:
             return cached
         event = self._chunk_events.setdefault((key, index), asyncio.Event())
         window = self._window_for_chunk(index)
-        self._mark_foreground(key, window)
+        self._mark_foreground(key, window, index)
         try:
             self._ensure_window(key, package, relpath, size, window, needed_chunk=index)
             await event.wait()
@@ -167,7 +167,7 @@ class MediaRangeCache:
                 raise RangeCacheError("chunk unavailable after fetch")
             return cached
         finally:
-            self._unmark_foreground(key, window)
+            self._unmark_foreground(key, window, index)
 
     def _window_spans(self, key: str, window: int) -> list[tuple[int, int, asyncio.Task[object]]]:
         return self._window_tasks.get((key, window), [])
@@ -414,12 +414,18 @@ class MediaRangeCache:
     def _window_is_foreground(self, key: str, window: int) -> bool:
         return self._foreground_windows.get((key, window), 0) > 0
 
-    def _mark_foreground(self, key: str, window: int) -> None:
+    def _mark_foreground(self, key: str, window: int, index: int) -> None:
+        pin = getattr(self._store, "pin", None)
+        if pin is not None:
+            pin(key, index)
         window_key = (key, window)
         self._foreground_windows[window_key] = self._foreground_windows.get(window_key, 0) + 1
         asyncio.create_task(self._gate.notify_waiters())
 
-    def _unmark_foreground(self, key: str, window: int) -> None:
+    def _unmark_foreground(self, key: str, window: int, index: int) -> None:
+        unpin = getattr(self._store, "unpin", None)
+        if unpin is not None:
+            unpin(key, index)
         window_key = (key, window)
         count = self._foreground_windows.get(window_key, 0)
         if count <= 1:
@@ -510,7 +516,7 @@ class MediaRangeCache:
         trace = stream_trace.current()
         if trace is not None:
             self._trace_prime(trace, key, window, index, byte_range.start)
-        self._mark_foreground(key, window)
+        self._mark_foreground(key, window, index)
         try:
             self._ensure_window(key, package, relpath, size, window, needed_chunk=index)
             waited = False
@@ -542,7 +548,7 @@ class MediaRangeCache:
                 waited = True
                 await event.wait()
         finally:
-            self._unmark_foreground(key, window)
+            self._unmark_foreground(key, window, index)
         waited_ms = (time.perf_counter() - started) * 1000
         self._prime_wait_ms += waited_ms
         self._prime_waits += 1
@@ -578,7 +584,7 @@ class MediaRangeCache:
     ) -> bytes:
         partial_key = (key, index)
         window = self._window_for_chunk(index)
-        self._mark_foreground(key, window)
+        self._mark_foreground(key, window, index)
         try:
             self._ensure_window(key, package, relpath, size, window, needed_chunk=index)
             while True:
@@ -608,7 +614,7 @@ class MediaRangeCache:
                         or self._store.read_slice(key, index, offset, length) is not None
                     )
         finally:
-            self._unmark_foreground(key, window)
+            self._unmark_foreground(key, window, index)
 
     def has_chunk(self, key: str, index: int) -> bool:
         return self._store.has(key, index)
