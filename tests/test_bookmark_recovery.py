@@ -240,7 +240,7 @@ class BookmarkRecoveryTests(unittest.IsolatedAsyncioTestCase):
         remote = self.factory.clients[self.settings.endpoint_url]
         manifest = await EncryptedManifestStore(remote, self.cipher, "player").load()
         self.assertEqual(manifest["bookmarks"], [asdict(saved)])
-        self.assertEqual(manifest["schema_version"], 3)
+        self.assertEqual(manifest["schema_version"], 4)
         new = PlayerCatalogRepositorySQLite(self.path / "bookmarks.sqlite3")
         await new.open()
         try:

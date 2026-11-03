@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { createSeekSession, seekIntent } from "./seek";
+import type { ClipBounds } from "./clipRange";
 
-export function useHorizontalSeek(video: RefObject<HTMLVideoElement | null>, source: string, enabled: boolean) {
+export function useHorizontalSeek(video: RefObject<HTMLVideoElement | null>, source: string, enabled: boolean, bounds?: ClipBounds | null) {
   const [target, setTarget] = useState<number | null>(null);
   const press = useRef<{ x: number; y: number; at: number; width: number; session?: ReturnType<typeof createSeekSession> } | null>(null);
   const cancel = () => { press.current?.session?.cancel(); press.current = null; setTarget(null); };
@@ -9,8 +10,11 @@ export function useHorizontalSeek(video: RefObject<HTMLVideoElement | null>, sou
     cancel();
     const hide = () => { if (document.hidden) cancel(); };
     document.addEventListener("visibilitychange", hide);
-    return () => { cancel(); document.removeEventListener("visibilitychange", hide); };
-  }, [source, enabled]);
+    const el = video.current;
+    el?.addEventListener("pause", cancel);
+    return () => { cancel(); el?.removeEventListener("pause", cancel); document.removeEventListener("visibilitychange", hide); };
+  }, [source, enabled, bounds?.start, bounds?.end]);
+  const length = () => bounds ? bounds.end - bounds.start : video.current?.duration ?? 0;
   return {
     target,
     down(x: number, y: number) {
@@ -24,15 +28,15 @@ export function useHorizontalSeek(video: RefObject<HTMLVideoElement | null>, sou
       if (!p.session) {
         if (intent === "vertical") { cancel(); return false; }
         if (intent !== "horizontal") return false;
-        p.session = createSeekSession(el, setTarget);
+        p.session = createSeekSession(el, setTarget, bounds ?? undefined);
       }
-      p.session.move(p.at + (x - p.x) / p.width * el.duration);
+      p.session.move(p.at + (x - p.x) / p.width * length());
       return true;
     },
     up(x: number, y: number) {
       const p = press.current;
       if (!p?.session) { cancel(); return false; }
-      if (video.current && enabled) p.session.commit(p.at + (x - p.x) / p.width * video.current.duration);
+      if (video.current && enabled) p.session.commit(p.at + (x - p.x) / p.width * length());
       void y; cancel(); return true;
     },
     cancel,

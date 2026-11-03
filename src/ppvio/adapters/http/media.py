@@ -264,6 +264,7 @@ class PlayerMediaHttpMixin:
             **({"phash": cover["phash"]}
                if cover is not None and isinstance(cover.get("phash"), str) and cover["phash"]
                else {}),
+            "organized": await self._repository.is_organized(media_id),
             "favorite": (
                 await self._repository.is_global_favorite(media_id)
                 if self._favorite_backup is not None

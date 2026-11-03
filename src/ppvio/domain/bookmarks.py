@@ -27,6 +27,16 @@ class PlayerBookmark:
     position_seconds: float
     name: str | None
     created_at: int
+    end_seconds: float | None = None
+
+
+def clean_bookmark_end(value: object, start_seconds: float) -> float | None:
+    if value is None:
+        return None
+    end = position_ticks(value)
+    if end <= position_ticks(start_seconds):
+        raise InvalidBookmark("bookmark end must follow its start")
+    return end / 10
 
 
 def position_ticks(value: object) -> int:
@@ -73,5 +83,6 @@ def validate_bookmarks(bookmarks: list[PlayerBookmark]) -> list[PlayerBookmark]:
         if counts[bookmark.media_id] > MAX_MEDIA_BOOKMARKS:
             raise BookmarkLimitReached("per-video bookmark limit reached")
         normalized.append(replace(bookmark, position_seconds=ticks / 10,
-                                  name=clean_bookmark_name(bookmark.name)))
+                                  name=clean_bookmark_name(bookmark.name),
+                                  end_seconds=clean_bookmark_end(bookmark.end_seconds, ticks / 10)))
     return normalized

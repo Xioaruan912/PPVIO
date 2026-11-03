@@ -28,3 +28,12 @@ it("drops pending seeks on source changes and cancellation and clamps positions"
   expect(seekIntent(5, 4)).toBe("pending"); expect(seekIntent(13, 24)).toBe("vertical");
   expect(seekIntent(40, 8)).toBe("horizontal");
 });
+
+it("cancels delayed seeks when playback pauses but allows a fresh paused drag", () => {
+  vi.useFakeTimers(); const video = document.createElement("video"); video.src = "/v";
+  Object.defineProperty(video, "duration", { value: 100 });
+  const first = createSeekSession(video, () => {}); first.move(10); first.move(20);
+  video.dispatchEvent(new Event("pause")); vi.advanceTimersByTime(100); first.commit(30);
+  expect(video.currentTime).toBe(10);
+  const next = createSeekSession(video, () => {}); next.commit(40); expect(video.currentTime).toBe(40);
+});

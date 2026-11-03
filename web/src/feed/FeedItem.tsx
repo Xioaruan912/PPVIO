@@ -13,6 +13,7 @@ import { SeekPreview } from "../ui/SeekPreview";
 import { BookmarkButton } from "../ui/Bookmarks";
 import { useHorizontalSeek } from "../player/useHorizontalSeek";
 import { usePlaybackRecovery, RecoveryNotice } from "../player/usePlaybackRecovery";
+import { useClipRange } from "../player/clipRange";
 
 interface Props {
   media: Media;
@@ -43,6 +44,8 @@ export function FeedItem({ media, active, mounted, eager = false, onBufferReadin
   const [failed, setFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [bursts, setBursts] = useState<Burst[]>([]);
+  const [original, setOriginal] = useState(false);
+  const clip = original ? undefined : media.clip;
   const recognizer = useRef<GestureRecognizer | null>(null);
   const lastY = useRef(0);
   const landscape = (media.width ?? 9) > (media.height ?? 16);
@@ -50,11 +53,12 @@ export function FeedItem({ media, active, mounted, eager = false, onBufferReadin
   const hasLow = media.variants.some(v => v.height && v.height < (media.height ?? Infinity));
   const onPause = useCallback(() => setPaused(true), []);
   const { attachVideo, visible } = useFeedPlayback(video, {
-    media, src, active, mounted, eager, paused, locked, onPause, onBufferReadiness,
+    media, src, active, mounted, eager, paused, locked, onPause, onBufferReadiness, original,
   });
 
   const enabled = active && mounted && !locked && visible;
-  const horizontal = useHorizontalSeek(video, src, enabled);
+  const { range, invalid } = useClipRange(video, src, mounted && (active || eager) && !locked && visible, clip, active && !paused, active);
+  const horizontal = useHorizontalSeek(video, src, enabled && !invalid, range);
   const recovery = usePlaybackRecovery(video, src, enabled);
 
   // Play only the clip on screen; a clip that leaves the screen starts over next time.
@@ -63,8 +67,9 @@ export function FeedItem({ media, active, mounted, eager = false, onBufferReadin
     setPaused(false); setFast(false); setMenu(false);
     const el = video.current;
     if (!el) return;
-    el.currentTime = 0; el.playbackRate = 1;
-  }, [active, mounted, src]);
+    if (!clip) el.currentTime = 0;
+    el.playbackRate = 1;
+  }, [active, mounted, src, clip?.start]);
 
   useEffect(() => { if (video.current) video.current.muted = prefs.muted; }, [prefs.muted]);
 
@@ -107,7 +112,7 @@ export function FeedItem({ media, active, mounted, eager = false, onBufferReadin
         <img src={media.cover_url} alt="" aria-hidden className="absolute inset-0 size-full scale-110 object-cover opacity-50 blur-2xl" />
       )}
       {mounted ? (
-        <video ref={attachVideo} src={src} poster={media.cover_url ?? undefined} playsInline loop muted={prefs.muted}
+        <video ref={attachVideo} src={src} poster={media.cover_url ?? undefined} playsInline loop={!clip} muted={prefs.muted}
           preload={!locked && visible && (active || eager) ? "auto" : "metadata"}
           onLoadedMetadata={event => { if (!startedAt.current && startAt !== undefined) { event.currentTarget.currentTime = Math.min(startAt, event.currentTarget.duration); startedAt.current = true; } }}
           onLoadStart={() => { setFailed(false); setLoading(true); }}
@@ -131,7 +136,8 @@ export function FeedItem({ media, active, mounted, eager = false, onBufferReadin
         onContextMenu={event => event.preventDefault()} />
 
       <LoadingFeedback video={video} source={src} waiting={loading}
-        enabled={active && mounted && !paused && !locked && visible && !failed} />
+        enabled={active && mounted && !paused && !locked && visible && !failed && !invalid} />
+      {invalid && active && <div className="absolute inset-x-6 top-1/3 z-10 rounded-xl bg-black/80 p-5 text-center text-white"><p className="mb-3 text-sm">片段位置已超出视频时长</p><button type="button" className="min-h-11 rounded-full bg-accent px-5" onClick={() => { setOriginal(true); setPaused(false); if (video.current) { video.current.currentTime = 0; void video.current.play().catch(() => setPaused(true)); } }}>打开原视频</button></div>}
 
       <AnimatePresence>
         {paused && active && (
@@ -153,10 +159,10 @@ export function FeedItem({ media, active, mounted, eager = false, onBufferReadin
         ))}
       </AnimatePresence>
 
-      {enabled && <RecoveryNotice {...recovery} compatible={hasLow && !prefs.lowRes ? () => setPref("lowRes", true) : undefined} />}
+      {enabled && !invalid && <RecoveryNotice {...recovery} compatible={hasLow && !prefs.lowRes ? () => setPref("lowRes", true) : undefined} />}
       {enabled && horizontal.target !== null && <div className="pointer-events-none absolute inset-x-0 bottom-40"><SeekPreview id={media.id} time={horizontal.target} enabled /></div>}
 
-      <div className={`absolute right-3 flex flex-col items-center gap-5 transition-[bottom] ${raised ? "bottom-[calc(9.5rem+env(safe-area-inset-bottom))]" : "bottom-[calc(5.5rem+env(safe-area-inset-bottom))]"}`}>
+      <div className={`absolute right-3 flex flex-col items-center gap-5 transition-[bottom] ${raised ? "bottom-[calc(13rem+env(safe-area-inset-bottom))]" : "bottom-[calc(5.5rem+env(safe-area-inset-bottom))]"}`}>
         <RailButton label={media.favorite ? "取消收藏" : "收藏"} onClick={() => favorite(!media.favorite)}>
           <HeartIcon size={30} weight="fill" className={media.favorite ? "text-accent" : "text-white"} />
         </RailButton>
@@ -176,7 +182,7 @@ export function FeedItem({ media, active, mounted, eager = false, onBufferReadin
       <MediaActions media={media} open={menu} onClose={() => setMenu(false)} onRemove={onRemove} />
 
       <div className="absolute inset-x-0 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] px-3">
-        <SeekBar video={video} source={src} mediaId={media.id} enabled={enabled} duration={media.duration_seconds ?? 0} />
+        <SeekBar video={video} source={src} mediaId={media.id} enabled={enabled && !invalid} duration={media.duration_seconds ?? 0} bounds={range} />
       </div>
     </section>
   );

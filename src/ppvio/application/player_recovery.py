@@ -17,6 +17,7 @@ from ppvio.application.ports import (
     PlayerStateCipherPort,
     WebDavWriteClient,
 )
+from ppvio.application.curation_snapshot import read_curation_snapshot
 from ppvio.domain.bookmarks import PlayerBookmark, validate_bookmarks
 from ppvio.domain.storage_settings import (
     PlayerStorageSettings,
@@ -30,17 +31,17 @@ FAVORITES_CONTEXT = b"tgvio-player-favorites-v1"
 USERNAME_CONTEXT = b"webdav-username"
 PASSWORD_CONTEXT = b"webdav-password"
 # The favorites manifest is the one snapshot whose *contents* grow with a feature:
-# v2 adds user collections; v3 adds per-video bookmarks. Older payloads stay valid input (they carry no
+# v2 adds collections; v3 adds bookmarks; v4 adds curation and bookmark ranges. Older payloads stay valid input (they carry no
 # collections), and the encryption contexts above must never change with it - those
 # strings are part of the key derivation, so bumping one would make every existing
 # backup undecryptable.
-MANIFEST_SCHEMA_VERSION = 3
+MANIFEST_SCHEMA_VERSION = 4
 # The backup lives inside the video folder under plain names; 99_TGPLAYER is the
 # name earlier installs used there, and is renamed on first contact.
 BACKUP_DIR = "收藏"
 FAVORITES_DIR = "全部"
 LEGACY_BACKUP_DIR = "99_TGPLAYER"
-_SUPPORTED_MANIFEST_VERSIONS = (1, 2, MANIFEST_SCHEMA_VERSION)
+_SUPPORTED_MANIFEST_VERSIONS = (1, 2, 3, MANIFEST_SCHEMA_VERSION)
 _MAX_SNAPSHOT_BYTES = 16 * 1024 * 1024
 # Snapshot revisions kept on the storage: the one the pointer names and two before it.
 _KEPT_REVISIONS = 3
@@ -176,6 +177,8 @@ class EncryptedManifestStore:
                 raise RecoveryError("snapshot revision is already occupied")
 
         encrypted = self._cipher.encrypt(_json_bytes(value), context=self._context)
+        if len(encrypted) > _MAX_SNAPSHOT_BYTES:
+            raise RecoveryError("Player snapshot exceeds the 16 MiB recovery limit")
         filename = f"{self._name}.{revision}.enc"
         revision_path = _join(self._root, filename)
         existing = await self._client.get_bytes(revision_path, max_bytes=_MAX_SNAPSHOT_BYTES)
@@ -302,6 +305,7 @@ class PlayerRecoveryService:
             pending_jobs = await self._repository.list_pending_favorite_sync()
             collections = await self._list_collections()
             bookmarks = await self._repository.export_bookmarks()
+            curation = await self._repository.export_curation()
             config_store = EncryptedManifestStore(
                 client, self._cipher, root, context=CONFIG_CONTEXT, name="player-config",
             )
@@ -318,7 +322,7 @@ class PlayerRecoveryService:
             settings = replace(current, revision=revision)
             config = self._config_snapshot(settings)
             manifest = self._manifest_snapshot(
-                settings, revision, favorites, location_by_id, pending_jobs, collections, bookmarks,
+                settings, revision, favorites, location_by_id, pending_jobs, collections, bookmarks, curation,
             )
             await config_store.save_atomic(config)
             await manifest_store.save_atomic(manifest)
@@ -379,6 +383,7 @@ class PlayerRecoveryService:
             # must fail the restore while the old state is still intact.
             collections = self._read_collections(manifest)
             bookmarks = self._read_bookmarks(manifest)
+            curation = read_curation_snapshot(manifest)
 
             verified: list[tuple[str, str, int, str, int, str]] = []
             deleting: list[tuple[str, str, int, str, int]] = []
@@ -426,22 +431,26 @@ class PlayerRecoveryService:
                     raise RecoveryError("remote favorite copy is missing or has the wrong size")
                 verified.append((media_id, safe_relpath, stat.size_bytes, mime_type, created_at, state))
 
-            # The bookmark merge is atomic and detects local conflicts before other state changes.
-            await self._repository.restore_bookmarks(bookmarks)
-            # Snapshots older than archive_root keep the locally set folder.
-            await self._repository.save_storage_settings(replace(
-                settings, revision=revision, archive_root=settings.archive_root or local.archive_root,
-            ))
-            for media_id, relpath, size, mime, created_at, _state in verified:
-                await self._repository.restore_favorite_copy(media_id, relpath, size, mime, created_at)
-            for media_id, created_at in pending:
-                await self._repository.restore_pending_favorite(media_id, created_at)
-            for media_id, relpath, size, mime, created_at in deleting:
-                await self._repository.restore_favorite_copy(media_id, relpath, size, mime, created_at)
-                await self._repository.set_global_favorite(media_id, False)
-                await self._repository.enqueue_favorite_sync(media_id, "delete")
-                await self._repository.mark_favorite_delete_intent(media_id)
-            await self._restore_collections(collections)
+            async with self._repository.recovery_transaction():
+                if curation is not None:
+                    await self._repository.restore_curation(curation)
+                # The bookmark merge is atomic and detects local conflicts before other state changes.
+                await self._repository.restore_bookmarks(bookmarks)
+                # Snapshots older than archive_root keep the locally set folder.
+                await self._repository.save_storage_settings(replace(
+                    settings, revision=revision, archive_root=settings.archive_root or local.archive_root,
+                ))
+                for media_id, relpath, size, mime, created_at, _state in verified:
+                    await self._repository.restore_favorite_copy(media_id, relpath, size, mime, created_at)
+                for media_id, created_at in pending:
+                    await self._repository.restore_pending_favorite(media_id, created_at)
+                for media_id, relpath, size, mime, created_at in deleting:
+                    await self._repository.restore_favorite_copy(media_id, relpath, size, mime, created_at)
+                    await self._repository.set_global_favorite(media_id, False)
+                    await self._repository.enqueue_favorite_sync(media_id, "delete")
+                    await self._repository.mark_favorite_delete_intent(media_id)
+                await self._restore_collections(collections)
+                await self._repository.apply_pending_curation_tags()
             return RecoveryResult(True, revision, len(verified) + len(pending))
         except RecoveryError:
             raise
@@ -571,11 +580,12 @@ class PlayerRecoveryService:
             pending_jobs = await self._repository.list_pending_favorite_sync()
             collections = await self._list_collections()
             bookmarks = await self._repository.export_bookmarks()
+            curation = await self._repository.export_curation()
             config = self._config_snapshot(new_settings)
             location_by_id = {item[0]: item[1:] for item in migrated_locations}
             manifest = self._manifest_snapshot(
                 new_settings, new_settings.revision, favorite_rows, location_by_id,
-                pending_jobs, collections, bookmarks,
+                pending_jobs, collections, bookmarks, curation,
             )
             await config_store.save_atomic(config)
             await manifest_store.save_atomic(manifest)
@@ -645,7 +655,7 @@ class PlayerRecoveryService:
                     raise ValueError
                 bookmarks.append(PlayerBookmark(
                     entry["id"], entry["media_id"], entry["position_seconds"],
-                    entry.get("name"), entry["created_at"],
+                    entry.get("name"), entry["created_at"], entry.get("end_seconds"),
                 ))
             return validate_bookmarks(bookmarks)
         except (KeyError, TypeError, ValueError) as exc:
@@ -733,6 +743,7 @@ class PlayerRecoveryService:
         pending_jobs: list[Any],
         collections: list[dict[str, Any]],
         bookmarks: list[PlayerBookmark],
+        curation: dict,
     ) -> dict[str, Any]:
         items: list[dict[str, Any]] = []
         for media_id, created_at in favorites:
@@ -772,6 +783,7 @@ class PlayerRecoveryService:
             "items": items,
             "collections": collections,
             "bookmarks": [asdict(bookmark) for bookmark in bookmarks],
+            "curation": curation,
         }
 
     def _settings_from_snapshot(self, config: dict[str, Any]) -> PlayerStorageSettings:

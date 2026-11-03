@@ -20,6 +20,7 @@ class PlayerBookmarkHttpMixin:
         app.router.add_get("/api/v1/media/{media_id}/bookmarks", self._bookmarks_media)
         app.router.add_post("/api/v1/media/{media_id}/bookmarks", self._bookmark_add)
         app.router.add_delete("/api/v1/media/{media_id}/bookmarks/{bookmark_id}", self._bookmark_delete)
+        app.router.add_patch("/api/v1/media/{media_id}/bookmarks/{bookmark_id}", self._bookmark_update)
 
     async def _bookmark_snapshot_context(self, app: web.Application):
         task = asyncio.create_task(self._recovery_service.run_bookmark_snapshots(self._bookmark_snapshot_wake))
@@ -40,11 +41,11 @@ class PlayerBookmarkHttpMixin:
         self._require_same_origin(request)
         details = await self._media_details(request.match_info["media_id"])
         payload = await self._json_object(request)
-        if set(payload) - {"position_seconds", "name"}:
+        if set(payload) - {"position_seconds", "name", "end_seconds"}:
             raise web.HTTPBadRequest(text="invalid bookmark fields")
         try:
             bookmark = await self._repository.add_bookmark(
-                str(details["media_id"]), payload.get("position_seconds"), payload.get("name"),
+                str(details["media_id"]), payload.get("position_seconds"), payload.get("name"), payload.get("end_seconds"),
             )
         except BookmarkLimitReached as exc:
             raise web.HTTPConflict(text=str(exc)) from None
@@ -52,6 +53,24 @@ class PlayerBookmarkHttpMixin:
             raise web.HTTPBadRequest(text=str(exc)) from None
         self._bookmark_snapshot_wake.set()
         return web.json_response(asdict(bookmark), status=201)
+
+    async def _bookmark_update(self, request: web.Request) -> web.Response:
+        await self._authenticate(request)
+        self._require_same_origin(request)
+        details = await self._media_details(request.match_info["media_id"])
+        changes = await self._json_object(request)
+        if not changes or set(changes) - {"end_seconds", "name"}:
+            raise web.HTTPBadRequest(text="invalid bookmark fields")
+        bookmark_id = request.match_info["bookmark_id"]
+        if not valid_bookmark_id(bookmark_id):
+            raise web.HTTPNotFound(text="bookmark not found")
+        try:
+            bookmark = await self._repository.update_bookmark(str(details["media_id"]), bookmark_id, changes)
+        except InvalidBookmark as exc:
+            raise web.HTTPBadRequest(text=str(exc)) from None
+        if bookmark is None:
+            raise web.HTTPNotFound(text="bookmark not found")
+        return web.json_response(asdict(bookmark))
 
     async def _bookmark_delete(self, request: web.Request) -> web.Response:
         await self._authenticate(request)

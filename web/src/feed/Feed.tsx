@@ -1,4 +1,4 @@
-import { ArrowDownIcon, CaretLeftIcon, HeartIcon, TrashIcon } from "@phosphor-icons/react";
+import { ArrowDownIcon, CaretLeftIcon, CheckIcon, HeartIcon, TrashIcon } from "@phosphor-icons/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, chooseStream, Unauthorized, type Media } from "../api";
 import { usePrefs } from "../prefs";
@@ -6,6 +6,8 @@ import { announce } from "../ui/Grid";
 import { toast } from "../ui/toast";
 import { FeedItem } from "./FeedItem";
 import type { BufferReadiness } from "./useFeedPlayback";
+import { curationApi } from "../curationApi";
+import { FeedPreferencesButton } from "../ui/FeedPreferences";
 
 /** Append new clips, never one already in the list. */
 export function mergeFeed(current: Media[], incoming: Media[]): Media[] {
@@ -32,16 +34,17 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, organ
   const prefs = usePrefs();
   const [preloadFor, setPreloadFor] = useState<{ id: string; src: string } | null>(null);
   const current = items[active];
+  const currentKey = current?.clip?.key ?? current?.id;
   const currentSrc = current ? chooseStream(current, prefs.lowRes) : "";
-  const currentSource = useRef({ id: current?.id, src: currentSrc });
-  currentSource.current = { id: current?.id, src: currentSrc };
+  const currentSource = useRef({ id: currentKey, src: currentSrc, enabled });
+  currentSource.current = { id: currentKey, src: currentSrc, enabled };
   const onBufferReadiness = useCallback<BufferReadiness>((id, src, ready) => {
     if (id !== currentSource.current.id || src !== currentSource.current.src) return;
     setPreloadFor(previous => ready
       ? previous?.id === id && previous.src === src ? previous : { id, src }
       : previous === null ? previous : null);
   }, []);
-  const preloadNext = preloadFor?.id === current?.id && preloadFor?.src === currentSrc;
+  const preloadNext = preloadFor?.id === currentKey && preloadFor?.src === currentSrc;
 
   // Open on the clip that was tapped.
   useLayoutEffect(() => {
@@ -72,13 +75,13 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, organ
     const onKey = (event: KeyboardEvent) => {
       const el = container.current;
       const step = event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0;
-      if (!el || !step || event.metaKey || event.ctrlKey || event.altKey || event.target instanceof HTMLInputElement) return;
+      if (!enabled || !el || !step || event.metaKey || event.ctrlKey || event.altKey || event.target instanceof HTMLInputElement) return;
       event.preventDefault();
       el.scrollBy({ top: step * el.clientHeight, behavior: "smooth" });
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [enabled]);
 
   const setFavorite = useCallback((id: string, on: boolean) => {
     setItems(list => list.map(item => item.id === id ? { ...item, favorite: on } : item));
@@ -100,16 +103,29 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, organ
   }, [items, setItems]);
 
   const next = () => container.current?.scrollBy({ top: container.current.clientHeight, behavior: "smooth" });
+  const [curating, setCurating] = useState(false);
+  const complete = async () => {
+    if (!current || curating) return;
+    setCurating(true);
+    try {
+      await curationApi.batch([current.id], { organized: true });
+      setItems(list => list.map(item => item.id === current.id ? { ...item, organized: true } : item));
+      toast("已整理完成");
+      if (currentSource.current.id === (current.clip?.key ?? current.id) && currentSource.current.enabled) next();
+    } catch { toast("整理未保存，请重试"); }
+    finally { setCurating(false); }
+  };
 
   return (
     <div ref={container} className="h-dvh snap-y snap-mandatory overflow-y-scroll [scrollbar-width:none]">
       {organize && current && (
-        <div className="fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-20 flex justify-center gap-3 px-4">
+        <div className="fixed inset-x-0 bottom-[calc(5.25rem+env(safe-area-inset-bottom))] z-20 mx-auto grid max-w-md grid-cols-2 gap-2 px-4">
           <OrganizeButton label="删除" disabled={!current.deletable} onClick={() => void remove(current)}><TrashIcon size={24} /></OrganizeButton>
           <OrganizeButton label="收藏" accent onClick={() => {
             if (!current.favorite) { setFavorite(current.id, true); void api.favorite(current.id, true).catch(() => setFavorite(current.id, false)); }
             next();
           }}><HeartIcon size={24} weight="fill" /></OrganizeButton>
+          <OrganizeButton label={current.organized ? "已整理" : "整理完成"} disabled={curating || current.organized} onClick={() => void complete()}><CheckIcon size={24} /></OrganizeButton>
           <OrganizeButton label="跳过" onClick={next}><ArrowDownIcon size={24} /></OrganizeButton>
         </div>
       )}
@@ -120,10 +136,10 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, organ
         </button>
       )}
       {items.map((item, index) => (
-        <div key={item.id} data-index={index}>
+        <div key={item.clip?.key ?? item.id} data-index={index}>
           <FeedItem media={item} active={enabled && index === active} mounted={enabled && Math.abs(index - active) <= 1}
             eager={index === active + 1 && preloadNext} onBufferReadiness={onBufferReadiness}
-            onFavorite={setFavorite} onRemove={item.deletable ? remove : undefined} raised={organize} startAt={index === start ? startAt : undefined} />
+            onFavorite={setFavorite} onRemove={item.deletable && !item.clip ? remove : undefined} raised={organize} startAt={index === start ? startAt : undefined} />
         </div>
       ))}
     </div>
@@ -136,38 +152,47 @@ function OrganizeButton({ label, accent, disabled, onClick, children }: {
 }) {
   return (
     <button type="button" onClick={onClick} disabled={disabled}
-      className={`flex h-14 flex-1 max-w-36 items-center justify-center gap-2 rounded-full text-[15px] font-semibold backdrop-blur-md transition active:scale-95 disabled:opacity-40 ${accent ? "bg-accent text-white" : "bg-black/55 text-white"}`}>
+      className={`flex h-12 items-center justify-center gap-2 rounded-full text-[15px] font-semibold backdrop-blur-md transition active:scale-95 disabled:opacity-40 ${accent ? "bg-accent text-white" : "bg-black/55 text-white"}`}>
       {children}{label}
     </button>
   );
 }
 
 export function Feed({ onUnauthorized, enabled = true }: { onUnauthorized: () => void; enabled?: boolean }) {
+  const [revision, setRevision] = useState(0);
+  return <><div className="fixed left-3 top-[max(0.75rem,env(safe-area-inset-top))] z-20"><FeedPreferencesButton onSaved={() => setRevision(value => value + 1)} /></div><FeedContent key={revision} onUnauthorized={onUnauthorized} enabled={enabled} /></>;
+}
+
+function FeedContent({ onUnauthorized, enabled }: { onUnauthorized: () => void; enabled: boolean }) {
   const [items, setItems] = useState<Media[]>([]);
   const [organize, setOrganize] = useState(false);
   const [state, setState] = useState<"loading" | "ready" | "empty" | "error">("loading");
   const loading = useRef(false);
+  const controller = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
     if (loading.current) return;
     loading.current = true;
+    const request = new AbortController(); controller.current = request;
     try {
-      const page = await api.feed(6);
+      const page = await api.feed(6, request.signal);
+      if (request.signal.aborted) return;
       setItems(current => mergeFeed(current, page.items));
       setState(current => page.items.length || current === "ready" ? "ready" : "empty");
     } catch (error) {
+      if (request.signal.aborted) return;
       if (error instanceof Unauthorized) onUnauthorized();
       else setState(current => current === "ready" ? current : "error");
     } finally {
-      loading.current = false;
+      if (controller.current === request) loading.current = false;
     }
   }, [onUnauthorized]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load(); return () => { controller.current?.abort(); loading.current = false; }; }, [load]);
 
   if (state === "loading") return <Centered>正在加载…</Centered>;
   if (state === "error") return <Centered>加载失败，<button className="text-accent" onClick={() => { setState("loading"); void load(); }}>重试</button></Centered>;
-  if (state === "empty") return <Centered>还没有短视频。到 设置 里填好视频目录，扫描完成后这里就会出现。</Centered>;
+  if (state === "empty") return <Centered>当前偏好下没有短视频。可以调整左上角的偏好；新片库请先在设置中扫描视频目录。</Centered>;
   return (
     <>
       <button type="button" onClick={() => setOrganize(value => !value)} aria-pressed={organize}

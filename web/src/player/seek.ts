@@ -4,11 +4,13 @@ export function seekIntent(dx: number, dy: number): "pending" | "horizontal" | "
 }
 
 /** Visual feedback is immediate; media seeks are bounded and tied to this source. */
-export function createSeekSession(video: HTMLVideoElement, preview: (time: number) => void) {
+export function createSeekSession(video: HTMLVideoElement, preview: (time: number) => void, bounds?: { start: number; end: number }) {
   const source = video.getAttribute("src");
   let live = true, last = -Infinity, target = video.currentTime, timer: ReturnType<typeof setTimeout> | undefined;
+  const cancel = () => { live = false; clearTimeout(timer); video.removeEventListener("pause", cancel); };
+  video.addEventListener("pause", cancel);
   const valid = () => live && video.getAttribute("src") === source;
-  const clamp = (time: number) => Math.max(0, Math.min(Number.isFinite(video.duration) ? video.duration : 0, Number.isFinite(time) ? time : 0));
+  const clamp = (time: number) => Math.max(bounds?.start ?? 0, Math.min(bounds?.end ?? (Number.isFinite(video.duration) ? video.duration : 0), Number.isFinite(time) ? time : 0));
   const write = (exact: boolean) => {
     if (!valid()) return;
     try {
@@ -25,8 +27,8 @@ export function createSeekSession(video: HTMLVideoElement, preview: (time: numbe
       else if (timer === undefined) timer = setTimeout(() => { timer = undefined; write(false); }, 80 - (Date.now() - last));
     },
     commit(time = target) {
-      clearTimeout(timer); target = clamp(time); write(true); live = false;
+      clearTimeout(timer); target = clamp(time); write(true); cancel();
     },
-    cancel() { live = false; clearTimeout(timer); },
+    cancel,
   };
 }

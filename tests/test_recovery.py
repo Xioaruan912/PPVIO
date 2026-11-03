@@ -95,6 +95,18 @@ class MemoryDavFactory:
 
 
 class EncryptedManifestStoreTests(unittest.IsolatedAsyncioTestCase):
+    async def test_oversized_snapshot_is_rejected_before_upload_and_preserves_pointer(self):
+        from unittest.mock import patch
+        dav = MemoryDav()
+        cipher = PlayerStateCipher(base64.urlsafe_b64encode(b"k" * 32).decode().rstrip("="))
+        store = EncryptedManifestStore(dav, cipher, "root", context=FAVORITES_CONTEXT)
+        await store.save_atomic({"schema_version": 1, "revision": 1, "items": []})
+        before = dict(dav.files)
+        with patch("ppvio.application.player_recovery._MAX_SNAPSHOT_BYTES", 4096):
+            with self.assertRaises(RecoveryError):
+                await store.save_atomic({"schema_version": 1, "revision": 2, "items": ["x" * 5000]})
+        self.assertEqual(dav.files, before)
+
     async def test_pointer_update_does_not_require_webdav_move(self) -> None:
         dav = MemoryDav()
         cipher = PlayerStateCipher(base64.urlsafe_b64encode(b"k" * 32).decode().rstrip("="))
@@ -483,7 +495,7 @@ class PlayerRecoveryTests(unittest.IsolatedAsyncioTestCase):
         await self.service.migrate_target(new_settings)
         copied = self.factory.clients[new_settings.endpoint_url]
         manifest = await EncryptedManifestStore(copied, self.cipher, "moved-root").load()
-        self.assertEqual(manifest["schema_version"], 3)
+        self.assertEqual(manifest["schema_version"], 4)
         self.assertEqual(
             [
                 (entry["name"], entry["kind"], entry["items"])

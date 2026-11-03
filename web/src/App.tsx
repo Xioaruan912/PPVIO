@@ -12,9 +12,11 @@ import { PrivacyGuard } from "./ui/privacy";
 import { Toasts } from "./ui/toast";
 import { BookmarkWall } from "./ui/Bookmarks";
 import { useRouteState } from "./ui/navigation";
+import { Curation } from "./pages/Curation";
+import { BookmarkLoopFeed } from "./pages/BookmarkLoopFeed";
 
 type Tab = "feed" | "library" | "favorites" | "settings";
-type Overlay = { kind: "clips"; items: Media[]; index: number; at?: number } | { kind: "long"; items: Media[]; index: number; at?: number } | { kind: "duplicates" } | { kind: "bookmarks" } | null;
+type Overlay = { kind: "clips"; items: Media[]; index: number; at?: number } | { kind: "long"; items: Media[]; index: number; at?: number } | { kind: "duplicates" } | { kind: "bookmarks" } | { kind: "curation" } | { kind: "loops" } | null;
 
 /**
  * A short clip opens the swipe list of the short clips around it; a long one opens the film player,
@@ -61,7 +63,7 @@ export function App() {
   return (
     <>
       <div hidden={tab !== "feed" || !!overlay}><Feed onUnauthorized={onUnauthorized} enabled={tab === "feed" && !overlay} /></div>
-      {libraryOpened && <div hidden={tab !== "library"}><Library selectedFolder={route.folder} onFolderChange={folder => navigate({ ...route, folder })} onOpen={open} refresh={closed} onBookmarks={() => navigate({ ...route, tab, overlay: { kind: "bookmarks" } })} /></div>}
+      {libraryOpened && <div hidden={tab !== "library"}><Library selectedFolder={route.folder} onFolderChange={folder => navigate({ ...route, folder })} onOpen={open} refresh={closed} onBookmarks={() => navigate({ ...route, tab, overlay: { kind: "bookmarks" } })} onCuration={() => navigate({ ...route, tab, overlay: { kind: "curation" } })} /></div>}
       {favoritesOpened && <div hidden={tab !== "favorites"}><Favorites onOpen={open} /></div>}
       {tab === "settings" && <Settings onLoggedOut={onUnauthorized} onDuplicates={() => navigate({ ...route, tab, overlay: { kind: "duplicates" } })} />}
 
@@ -72,7 +74,9 @@ export function App() {
       )}
       {overlay?.kind === "duplicates" && <Duplicates onClose={close} />}
 
-      {overlay?.kind === "bookmarks" && <div className="fixed inset-0 z-30 overflow-y-auto bg-bg"><BookmarkWall onBack={close} onOpen={(media, at) => open([media], 0, undefined, at)} /></div>}
+      {overlay?.kind === "bookmarks" && <div className="fixed inset-0 z-30 overflow-y-auto bg-bg"><BookmarkWall onBack={close} onOpen={(media, at) => open([media], 0, undefined, at)} onLoop={() => navigate({ ...route, overlay: { kind: "loops" } })} /></div>}
+      {overlay?.kind === "loops" && <BookmarkLoopFeed onClose={close} />}
+      {overlay?.kind === "curation" && <div className="fixed inset-0 z-30 overflow-y-auto bg-bg"><Curation onBack={close} onOpen={open} /></div>}
 
       {!overlay && (
         <nav className={`fixed inset-x-0 bottom-0 z-10 flex justify-around px-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-6 ${tab === "feed" ? "bg-gradient-to-t from-black/80 to-transparent" : "border-t border-line bg-bg/90 pt-2 backdrop-blur-md"}`} aria-label="导航">

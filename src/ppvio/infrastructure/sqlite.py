@@ -27,6 +27,9 @@ from ppvio.infrastructure.sqlite_favorites import PlayerFavoriteRepositoryMixin
 from ppvio.infrastructure.sqlite_library import PlayerLibraryRepositoryMixin
 from ppvio.infrastructure.sqlite_media_deletions import MEDIA_ACTIVE_CASE, PlayerMediaDeletionRepositoryMixin
 from ppvio.infrastructure.sqlite_read_mode import PlayerReadModeRepositoryMixin
+from ppvio.infrastructure.sqlite_feed_sessions import PlayerFeedSessionRepositoryMixin
+from ppvio.infrastructure.sqlite_feed_preferences import PlayerFeedPreferencesRepositoryMixin
+from ppvio.infrastructure.sqlite_curation import PlayerCurationRepositoryMixin
 from ppvio.infrastructure.sqlite_tags import PlayerTagRepositoryMixin
 from ppvio.infrastructure.sqlite_bookmarks import PlayerBookmarkRepositoryMixin
 from ppvio.infrastructure.sqlite_watched import PlayerWatchedRepositoryMixin
@@ -41,6 +44,9 @@ _DATE_GROUP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 class PlayerCatalogRepositorySQLite(
     PlayerMediaWorkRepositoryMixin,
     PlayerTagRepositoryMixin,
+    PlayerCurationRepositoryMixin,
+    PlayerFeedPreferencesRepositoryMixin,
+    PlayerFeedSessionRepositoryMixin,
     PlayerBookmarkRepositoryMixin,
     PlayerWatchedRepositoryMixin,
     PlayerDuplicateCopyRepositoryMixin,
@@ -63,6 +69,7 @@ class PlayerCatalogRepositorySQLite(
         )
         self._conn: sqlite3.Connection | None = None
         self._write_lock = asyncio.Lock()
+        self._recovery_task: asyncio.Task | None = None
 
     async def open(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -87,16 +94,36 @@ class PlayerCatalogRepositorySQLite(
 
     @asynccontextmanager
     async def _write_transaction(self) -> AsyncIterator[sqlite3.Connection]:
+        if self._recovery_task is asyncio.current_task():
+            yield self._require()
+            return
         async with self._write_lock:
             conn = self._require()
             conn.execute("BEGIN IMMEDIATE")
             try:
                 yield conn
-            except Exception:
+            except BaseException:
                 conn.rollback()
                 raise
             else:
                 conn.commit()
+
+    @asynccontextmanager
+    async def recovery_transaction(self) -> AsyncIterator[None]:
+        """Only validated local recovery writes join this atomic transaction."""
+        async with self._write_lock:
+            conn = self._require()
+            conn.execute("BEGIN IMMEDIATE")
+            self._recovery_task = asyncio.current_task()
+            try:
+                yield
+            except BaseException:
+                conn.rollback()
+                raise
+            else:
+                conn.commit()
+            finally:
+                self._recovery_task = None
 
     async def apply_package(self, package: CatalogPackage) -> None:
         async with self._write_transaction() as conn:
@@ -299,6 +326,8 @@ class PlayerCatalogRepositorySQLite(
                             "DELETE FROM media_covers WHERE package_id=? AND media_id=?",
                             (package.package_id, media_item.media_id),
                         )
+
+            self.apply_pending_curation_tags_in(conn)
 
     async def active_cover_records(self, media_id: str) -> list[tuple[str, str, str]]:
         rows = self._require().execute(
@@ -718,6 +747,9 @@ class PlayerCatalogRepositorySQLite(
                 conn.execute("UPDATE media SET active=0 WHERE media_id=?", (media_id,))
                 conn.execute("DELETE FROM favorites WHERE media_id=?", (media_id,))
                 conn.execute("DELETE FROM player_bookmarks WHERE media_id=?", (media_id,))
+                conn.execute("DELETE FROM player_media_curation WHERE media_id=?", (media_id,))
+                conn.execute("DELETE FROM player_pending_media_tags WHERE media_id=?", (media_id,))
+                conn.execute("DELETE FROM player_media_tags WHERE media_id=?", (media_id,))
                 conn.execute(
                     "DELETE FROM player_long_video_progress WHERE media_id=?",
                     (media_id,),
@@ -816,104 +848,6 @@ class PlayerCatalogRepositorySQLite(
     async def delete_player_session(self, token_digest: str) -> None:
         async with self._write_transaction() as conn:
             conn.execute("DELETE FROM player_sessions WHERE token_digest=?", (token_digest,))
-
-    async def has_unconsumed_feed_items(self, token_digest: str) -> bool:
-        row = self._require().execute(
-            """
-            SELECT 1 FROM feed_session_items
-            WHERE token_digest=? AND consumed_at IS NULL LIMIT 1
-            """,
-            (token_digest,),
-        ).fetchone()
-        return row is not None
-
-    async def next_feed_cycle(self, token_digest: str) -> int:
-        row = self._require().execute(
-            "SELECT current_cycle FROM feed_sessions WHERE token_digest=?", (token_digest,)
-        ).fetchone()
-        if row is None:
-            raise RuntimeError("unknown player session")
-        return int(row["current_cycle"]) + 1
-
-    async def recent_feed_media(self, token_digest: str, *, limit: int) -> list[str]:
-        if limit < 1:
-            return []
-        rows = self._require().execute(
-            """
-            SELECT media_id FROM feed_recent_media
-            WHERE token_digest=? ORDER BY id DESC LIMIT ?
-            """,
-            (token_digest, limit),
-        ).fetchall()
-        return [str(row["media_id"]) for row in rows]
-
-    async def write_feed_cycle(
-        self, token_digest: str, *, cycle: int, media_ids: list[str]
-    ) -> None:
-        now = int(time.time())
-        async with self._write_transaction() as conn:
-            exists = conn.execute(
-                "SELECT 1 FROM player_sessions WHERE token_digest=?", (token_digest,)
-            ).fetchone()
-            if exists is None:
-                raise RuntimeError("unknown player session")
-            conn.execute(
-                "UPDATE feed_sessions SET current_cycle=?, last_active_at=? WHERE token_digest=?",
-                (cycle, now, token_digest),
-            )
-            conn.executemany(
-                """
-                INSERT INTO feed_session_items(token_digest, cycle, ordinal, media_id)
-                VALUES(?,?,?,?)
-                """,
-                [(token_digest, cycle, ordinal, media_id) for ordinal, media_id in enumerate(media_ids)],
-            )
-
-    async def consume_feed_items(self, token_digest: str, *, limit: int) -> list[str]:
-        if limit < 1:
-            return []
-        now = int(time.time())
-        async with self._write_transaction() as conn:
-            # Recheck current catalog activity at consumption time: a package can
-            # disappear after a cycle was created.
-            rows = conn.execute(
-                """
-                SELECT item.cycle, item.ordinal, item.media_id
-                FROM feed_session_items item
-                JOIN media ON media.media_id=item.media_id
-                WHERE item.token_digest=? AND item.consumed_at IS NULL AND media.active=1
-                ORDER BY item.cycle, item.ordinal LIMIT ?
-                """,
-                (token_digest, limit),
-            ).fetchall()
-            result = [str(row["media_id"]) for row in rows]
-            for row in rows:
-                conn.execute(
-                    """
-                    UPDATE feed_session_items SET consumed_at=?
-                    WHERE token_digest=? AND cycle=? AND ordinal=? AND consumed_at IS NULL
-                    """,
-                    (now, token_digest, row["cycle"], row["ordinal"]),
-                )
-                conn.execute(
-                    "INSERT INTO feed_recent_media(token_digest, media_id, consumed_at) VALUES(?,?,?)",
-                    (token_digest, row["media_id"], now),
-                )
-            # Inactive deck entries are terminally skipped so a later cycle can
-            # start once all remaining active entries have been consumed.
-            conn.execute(
-                """
-                UPDATE feed_session_items SET consumed_at=?
-                WHERE token_digest=? AND consumed_at IS NULL
-                  AND media_id IN (SELECT media_id FROM media WHERE active=0)
-                """,
-                (now, token_digest),
-            )
-            conn.execute(
-                "UPDATE feed_sessions SET last_active_at=? WHERE token_digest=?",
-                (now, token_digest),
-            )
-            return result
 
     async def set_favorite(self, token_digest: str, media_id: str, *, enabled: bool) -> None:
         now = int(time.time())

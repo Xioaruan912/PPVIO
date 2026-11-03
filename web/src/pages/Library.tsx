@@ -11,7 +11,7 @@ type View = "short" | "long" | "folders";
 type Recent = Media & { position_seconds: number };
 
 /** ``refresh`` changes whenever a player closes, so watch progress is re-read. */
-export function Library({ onOpen, onBookmarks, refresh = 0, selectedFolder, onFolderChange }: { onOpen: Open; onBookmarks?: () => void; refresh?: number; selectedFolder?: LibraryFolder | null; onFolderChange?: (folder: LibraryFolder | null) => void }) {
+export function Library({ onOpen, onBookmarks, onCuration, refresh = 0, selectedFolder, onFolderChange }: { onOpen: Open; onBookmarks?: () => void; onCuration?: () => void; refresh?: number; selectedFolder?: LibraryFolder | null; onFolderChange?: (folder: LibraryFolder | null) => void }) {
   const [view, setView] = useState<View>("short");
   const [localFolder, setLocalFolder] = useState<LibraryFolder | null>(null);
   const folder = selectedFolder === undefined ? localFolder : selectedFolder;
@@ -24,6 +24,7 @@ export function Library({ onOpen, onBookmarks, refresh = 0, selectedFolder, onFo
         ) : null}
         <h1 className="min-w-0 flex-1 truncate text-[26px] font-semibold tracking-tight">{folder ? folder.label : "片库"}</h1>
         {onBookmarks && <button type="button" onClick={onBookmarks} className="min-h-10 rounded-full bg-surface px-4 text-[14px]">片段</button>}
+        {onCuration && <button type="button" onClick={onCuration} className="min-h-10 rounded-full bg-surface px-3 text-[14px]">待整理</button>}
         <BlurToggle />
       </header>
       {folder ? <FolderWall folder={folder} onOpen={onOpen} /> : (

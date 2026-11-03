@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import type { Media } from "../api";
 import { allowNextPreload, bufferedAhead } from "./mediaBuffer";
+import { clipPreloadReady, resolveClipRange } from "../player/clipRange";
 
 export type BufferReadiness = (id: string, src: string, ready: boolean) => void;
 
 export function useFeedPlayback(video: RefObject<HTMLVideoElement | null>, options: {
   media: Media; src: string; active: boolean; mounted: boolean; eager: boolean; paused: boolean; locked: boolean;
-  onPause: () => void; onBufferReadiness?: BufferReadiness;
+  onPause: () => void; onBufferReadiness?: BufferReadiness; original?: boolean;
 }) {
-  const { media, src, active, mounted, eager, paused, locked, onPause, onBufferReadiness } = options;
+  const { media, src, active, mounted, eager, paused, locked, onPause, onBufferReadiness, original = false } = options;
   const preloadStarted = useRef(false);
   const [visible, setVisible] = useState(document.visibilityState !== "hidden");
   useEffect(() => {
@@ -66,11 +67,14 @@ export function useFeedPlayback(video: RefObject<HTMLVideoElement | null>, optio
       ? (media.size_bytes ?? 0) / media.duration_seconds : 0;
     const publish = (ready: boolean) => {
       allowed = ready;
-      onBufferReadiness?.(media.id, src, ready);
+      onBufferReadiness?.(media.clip?.key ?? media.id, src, ready);
     };
-    const update = () => publish(el.currentSrc === new URL(src, document.baseURI).href
-      && !paused && !locked && visible && !el.paused
-      && allowNextPreload(el, allowed, bytesPerSecond));
+    const update = () => {
+      const range = media.clip ? resolveClipRange(media.clip, el.duration) : null;
+      publish(el.currentSrc === new URL(src, document.baseURI).href
+        && !paused && !locked && visible && !el.paused
+        && (media.clip && !original ? !!range && clipPreloadReady(el, range, allowed) : allowNextPreload(el, allowed, bytesPerSecond)));
+    };
     const wait = () => publish(false);
     const updates = ["progress", "timeupdate", "playing", "canplay", "seeked", "ratechange"];
     const waits = ["waiting", "stalled", "seeking", "pause", "error", "emptied"];
@@ -82,7 +86,7 @@ export function useFeedPlayback(video: RefObject<HTMLVideoElement | null>, optio
       waits.forEach(event => el.removeEventListener(event, wait));
     };
   }, [video, active, mounted, paused, locked, visible, src, media.id,
-    media.stream_url, media.size_bytes, media.duration_seconds, onBufferReadiness]);
+    media.stream_url, media.size_bytes, media.duration_seconds, media.clip?.key, media.clip?.start, media.clip?.end, original, onBufferReadiness]);
 
   return { attachVideo, visible };
 }

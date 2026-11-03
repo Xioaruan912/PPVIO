@@ -5,6 +5,9 @@ export class Unauthorized extends Error {}
 export interface Variant { id: string; height: number | null; label: string | null; stream_url: string }
 
 export interface Media {
+  /** View-only bookmark interval; never substitutes the server's opaque media ID. */
+  clip?: { key: string; start: number; end?: number | null };
+  organized?: boolean;
   id: string;
   width: number | null;
   height: number | null;
@@ -58,7 +61,7 @@ const json = (method: string, body?: unknown): RequestInit => ({ method, body: b
 export const api = {
   login: (secret: string) => request<{ authenticated: boolean }>("/api/v1/auth/login", json("POST", { secret })),
   logout: () => request<{ authenticated: boolean }>("/api/v1/auth/logout", json("POST")),
-  feed: (limit = 6) => request<{ items: Media[] }>(`/api/v1/feed?limit=${limit}`),
+  feed: (limit = 6, signal?: AbortSignal) => request<{ items: Media[] }>(`/api/v1/feed?limit=${limit}`, { signal }),
   favorite: (id: string, on: boolean) => request<{ favorite: boolean }>(`/api/v1/media/${id}/favorite`, { method: on ? "PUT" : "DELETE" }),
   videos: (category: Category, offset: number, limit = 20, tag: number | null = null, filters: VideoFilters = {}) =>
     request<Page>(`/api/v1/videos?${q({ category, offset, limit, sort: filters.sort ?? "newest", tag,

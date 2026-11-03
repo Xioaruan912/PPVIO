@@ -38,7 +38,7 @@ class BookmarkMigrationTests(unittest.TestCase):
                     run_migrations(copied, MIGRATIONS)
                     for table, rows in before.items():
                         self.assertEqual([tuple(row) for row in copied.execute(f'SELECT * FROM "{table}"')], rows, table)
-                    copied.execute("INSERT INTO player_bookmarks VALUES(?,?,?,?,?)",
+                    copied.execute("INSERT INTO player_bookmarks(bookmark_id,media_id,position_ticks,name,created_at) VALUES(?,?,?,?,?)",
                                    ("b" * 32, "f" * 64, 123, "offline scene", 1))
                     copied.commit()
                     self.assertEqual(copied.execute("SELECT revision,saved_revision FROM player_bookmark_snapshot").fetchone()[:], (1, 0))

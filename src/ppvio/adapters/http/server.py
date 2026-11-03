@@ -30,6 +30,8 @@ from .read_mode import PlayerReadModeHttpMixin
 from .watched import PlayerWatchedHttpMixin
 from .duplicates import PlayerDuplicateReviewHttpMixin
 from .tags import PlayerTagHttpMixin
+from .feed_preferences import PlayerFeedPreferencesHttpMixin
+from .curation import PlayerCurationHttpMixin
 from .bookmarks import PlayerBookmarkHttpMixin
 from .previews import PlayerPreviewHttpMixin
 
@@ -95,7 +97,7 @@ _SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
 }
-class PlayerHttpServer(PlayerPreviewHttpMixin, PlayerBookmarkHttpMixin, PlayerStatusHttpMixin, PlayerTagHttpMixin, PlayerDuplicateReviewHttpMixin, PlayerWatchedHttpMixin, PlayerHttpStreamingMixin, PlayerStorageSettingsHttpMixin, PlayerReadModeHttpMixin, PlayerLibraryHttpMixin, PlayerMediaHttpMixin):
+class PlayerHttpServer(PlayerFeedPreferencesHttpMixin, PlayerCurationHttpMixin, PlayerPreviewHttpMixin, PlayerBookmarkHttpMixin, PlayerStatusHttpMixin, PlayerTagHttpMixin, PlayerDuplicateReviewHttpMixin, PlayerWatchedHttpMixin, PlayerHttpStreamingMixin, PlayerStorageSettingsHttpMixin, PlayerReadModeHttpMixin, PlayerLibraryHttpMixin, PlayerMediaHttpMixin):
     """Small authenticated HTTP boundary around Player-only services.
 
     This adapter intentionally accepts only Player repository IDs. It has no
@@ -246,6 +248,8 @@ class PlayerHttpServer(PlayerPreviewHttpMixin, PlayerBookmarkHttpMixin, PlayerSt
         self._register_duplicate_routes(app)
         self._register_tag_routes(app)
         self._register_bookmark_routes(app)
+        self._register_curation_routes(app)
+        self._register_feed_preference_routes(app)
         self._register_preview_routes(app)
         app.router.add_get("/api/v1/videos", self._videos)
         app.router.add_get("/api/v1/groups/{group_id}/videos", self._group_videos)

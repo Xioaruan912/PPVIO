@@ -8,6 +8,11 @@ MAX_NAME_LENGTH = 20
 MAX_TAGS = 200
 
 
+def tag_name_key(name: str) -> str:
+    """Match the existing SQLite NOCASE uniqueness rule, which folds ASCII only."""
+    return name.translate(str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"))
+
+
 class InvalidTag(ValueError):
     pass
 

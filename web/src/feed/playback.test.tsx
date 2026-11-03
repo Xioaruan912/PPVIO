@@ -5,6 +5,7 @@ import type { Media } from "../api";
 import { PrivacyGuard } from "../ui/privacy";
 import { ClipList } from "./Feed";
 import { FeedItem } from "./FeedItem";
+import { curationApi } from "../curationApi";
 
 const items = Array.from({ length: 6 }, (_, i): Media => ({
   id: `clip-${i}`, stream_url: `/clip-${i}.mp4`, width: 360, height: 640,
@@ -62,6 +63,44 @@ afterEach(async () => {
 });
 
 describe("feed playback priority", () => {
+  it("does not skip a new active video when an earlier organize save finishes", async () => {
+    let resolve!: (result: { changed: number }) => void;
+    vi.spyOn(curationApi, "batch").mockImplementation(() => new Promise(r => { resolve = r; }));
+    await act(async () => root.render(<ClipList items={items} setItems={() => {}} organize />));
+    const scroller = container.firstElementChild as HTMLDivElement;
+    scroller.scrollBy = vi.fn();
+    await act(async () => [...container.querySelectorAll("button")].find(button => button.textContent?.includes("整理完成"))!.click());
+    await enter(1);
+    await act(async () => resolve({ changed: 1 }));
+    expect(scroller.scrollBy).not.toHaveBeenCalled();
+  });
+
+  it("waits for preload permission before seeking a neighbor and seeks again after its reload", async () => {
+    const clips = [{ ...items[0], clip: { key: "one", start: 10, end: 12 } },
+      { ...items[0], clip: { key: "two", start: 30, end: 33 } }];
+    await act(async () => root.render(<ClipList items={clips} setItems={() => {}} />));
+    const second = videoAt(1);
+    buffer(second, 0, 0); fire(second, "loadedmetadata"); expect(second.currentTime).toBe(0);
+    buffer(videoAt(0), 12, 10); fire(videoAt(0), "loadedmetadata");
+    expect(second.currentTime).toBe(30);
+    second.currentTime = 0; fire(second, "loadedmetadata"); expect(second.currentTime).toBe(30);
+  });
+  it("keeps two ranges of the same video separate, loops within bounds and pauses without restarting", async () => {
+    const clips = [{ ...items[0], clip: { key: "one", start: 10, end: 12 } },
+      { ...items[0], clip: { key: "two", start: 30, end: 33 } }];
+    await act(async () => root.render(<ClipList items={clips} setItems={() => {}} />));
+    const first = videoAt(0), second = videoAt(1);
+    expect(first).not.toBe(second); expect(first.loop).toBe(false);
+    buffer(first, 12, 10); fire(first, "loadedmetadata");
+    expect(first.currentTime).toBe(10); expect(second.preload).toBe("auto");
+    first.currentTime = 12.1; fire(first, "timeupdate"); expect(first.currentTime).toBe(10);
+    const slider = container.querySelector<HTMLInputElement>('[data-index="0"] input[type="range"]')!;
+    expect(slider.min).toBe("10"); expect(slider.max).toBe("12");
+    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: " " })));
+    first.currentTime = 12.1; fire(first, "ended"); expect(first.paused).toBe(true); expect(first.currentTime).toBe(12.1);
+    await enter(1); buffer(second, 33, 0); fire(second, "loadedmetadata"); expect(second.currentTime).toBe(30);
+    expect(second.paused).toBe(false); expect(first.paused).toBe(true);
+  });
   it("restarts a suspended metadata load once when the next clip is promoted", async () => {
     await renderFeed();
     const next = videoAt(1);
