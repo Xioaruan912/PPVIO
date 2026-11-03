@@ -37,4 +37,10 @@ describe("GestureRecognizer", () => {
     vi.advanceTimersByTime(DOUBLE_TAP_MS);
     expect(events).toEqual([]);
   });
+
+  it("cancelling a tap when seeking takes over never pauses the video later", () => {
+    tap(); g.down(100, 100, now + 20); g.cancel();
+    vi.advanceTimersByTime(DOUBLE_TAP_MS * 2);
+    expect(events).toEqual([]);
+  });
 });

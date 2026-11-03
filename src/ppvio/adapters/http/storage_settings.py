@@ -134,15 +134,9 @@ class PlayerStorageSettingsHttpMixin:
                         probe["category"], probe["status_code"],
                     )
                     raise RecoveryError("WebDAV credentials could not write the configured target")
-                if auto_backup:
-                    new_settings = await self._recovery_service.place_backup_under(new_settings)
-                await self._repository.save_storage_settings(new_settings)
-                await self._repository.save_libraries(libraries)
-                try:
-                    await self._recovery_service.export_state()
-                except Exception as exc:
-                    # The backup snapshot catches up on the next favorite sync; it never blocks a save.
-                    _LOG.warning("Player state export after save failed: category=%s", type(exc).__name__)
+                new_settings = await self._recovery_service.save_settings(
+                    new_settings, libraries=libraries, auto_backup=auto_backup,
+                )
             await self._replace_favorite_writer(new_settings)
             await self._apply_storage_settings()
         except Exception as exc:

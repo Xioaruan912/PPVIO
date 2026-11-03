@@ -1,7 +1,9 @@
 import { AnimatePresence, motion } from "motion/react";
+import { useBackLayer } from "./navigation";
 
 /** A bottom sheet over everything, closed by tapping outside it. */
 export function Sheet({ open, onClose, title, children }: { open: boolean; onClose: () => void; title?: string; children: React.ReactNode }) {
+  useBackLayer(open, onClose);
   return (
     <AnimatePresence>
       {open && (

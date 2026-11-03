@@ -29,4 +29,18 @@ describe("request", () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 204 })));
     await expect(api.addToCollection("c", "m")).resolves.toBeUndefined();
   });
+  it("keeps legacy video defaults and sends the requested library filters", async () => {
+    const urls: URL[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      urls.push(new URL(url, "https://player.test"));
+      return Response.json({ items: [], has_more: false });
+    });
+    await api.videos("short", 0);
+    await api.videos("long", 20, 20, 7, { sort: "random", seed: 42, unwatched: true, min_seconds: 60, max_seconds: 300 });
+    expect(Object.fromEntries(urls[0].searchParams)).toEqual({ category: "short", offset: "0", limit: "20", sort: "newest" });
+    expect(Object.fromEntries(urls[1].searchParams)).toEqual({ category: "long", offset: "20", limit: "20", tag: "7", sort: "random", seed: "42", unwatched: "true", min_seconds: "60", max_seconds: "300" });
+    await api.videos("short", 0, 20, null, { sort: "largest", seed: 42, unwatched: false });
+    expect(urls[2].searchParams.has("seed")).toBe(false);
+    expect(urls[2].searchParams.has("unwatched")).toBe(false);
+  });
 });

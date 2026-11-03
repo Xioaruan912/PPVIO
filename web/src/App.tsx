@@ -1,6 +1,6 @@
 import { GearSixIcon, HeartIcon, PlayIcon, SquaresFourIcon } from "@phosphor-icons/react";
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
-import type { Media } from "./api";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { Media, LibraryFolder } from "./api";
 import { ClipList, Feed } from "./feed/Feed";
 import { Login } from "./Login";
 import { Duplicates } from "./pages/Duplicates";
@@ -10,9 +10,11 @@ import { LongPlayer } from "./player/LongPlayer";
 import { Settings } from "./Settings";
 import { PrivacyGuard } from "./ui/privacy";
 import { Toasts } from "./ui/toast";
+import { BookmarkWall } from "./ui/Bookmarks";
+import { useRouteState } from "./ui/navigation";
 
 type Tab = "feed" | "library" | "favorites" | "settings";
-type Overlay = { kind: "clips"; items: Media[]; index: number } | { kind: "long"; items: Media[]; index: number } | { kind: "duplicates" } | null;
+type Overlay = { kind: "clips"; items: Media[]; index: number; at?: number } | { kind: "long"; items: Media[]; index: number; at?: number } | { kind: "duplicates" } | { kind: "bookmarks" } | null;
 
 /**
  * A short clip opens the swipe list of the short clips around it; a long one opens the film player,
@@ -31,36 +33,46 @@ export function overlayFor(items: Media[], index: number): Overlay {
 
 export function App() {
   const [authed, setAuthed] = useState(true);
-  const [tab, setTabState] = useState<Tab>("feed");
-  // 片库 stays mounted once opened, so its tab, tag, loaded pages and scroll survive a trip elsewhere.
-  const [libraryOpened, setLibraryOpened] = useState(false);
+  const [route, navigate, replace, back] = useRouteState<{ tab: Tab; overlay: Overlay; folder: LibraryFolder | null }>({ tab: "feed", overlay: null, folder: null });
+  const { tab, overlay } = route;
+  const [libraryOpened, setLibraryOpened] = useState(false), [favoritesOpened, setFavoritesOpened] = useState(false);
   const scrolls = useRef<Partial<Record<Tab, number>>>({});
   const setTab = (next: Tab) => {
-    scrolls.current[tab] = window.scrollY;
+    if (next === tab) return;
     if (next === "library") setLibraryOpened(true);
-    setTabState(next);
+    if (next === "favorites") setFavoritesOpened(true);
+    navigate({ ...route, tab: next, overlay: null });
   };
-  useLayoutEffect(() => { window.scrollTo(0, tab === "library" ? scrolls.current.library ?? 0 : 0); }, [tab]);
-  const [overlay, setOverlay] = useState<Overlay>(null);
+  useLayoutEffect(() => {
+    window.scrollTo(0, scrolls.current[tab] ?? 0);
+    return () => { scrolls.current[tab] = window.scrollY; };
+  }, [tab]);
   const [closed, setClosed] = useState(0);
-  const close = useCallback(() => { setOverlay(null); setClosed(n => n + 1); }, []);
+  const previousOverlay = useRef(overlay);
+  useEffect(() => { if (previousOverlay.current && !overlay) setClosed(n => n + 1); previousOverlay.current = overlay; }, [overlay]);
+  const close = () => back();
   const onUnauthorized = useCallback(() => setAuthed(false), []);
-  const open = useCallback((items: Media[], index: number) => setOverlay(overlayFor(items, index)), []);
+  const open = (items: Media[], index: number, _more?: () => void, at?: number) => {
+    const picked = overlayFor(items, index);
+    navigate({ ...route, tab, overlay: picked && (picked.kind === "clips" || picked.kind === "long") ? { ...picked, at } : picked });
+  };
 
   if (!authed) return <Login onDone={() => setAuthed(true)} />;
   return (
     <>
-      {tab === "feed" && !overlay && <Feed onUnauthorized={onUnauthorized} />}
-      {libraryOpened && <div hidden={tab !== "library"}><Library onOpen={open} refresh={closed} /></div>}
-      {tab === "favorites" && <Favorites onOpen={open} />}
-      {tab === "settings" && <Settings onLoggedOut={onUnauthorized} onDuplicates={() => setOverlay({ kind: "duplicates" })} />}
+      <div hidden={tab !== "feed" || !!overlay}><Feed onUnauthorized={onUnauthorized} enabled={tab === "feed" && !overlay} /></div>
+      {libraryOpened && <div hidden={tab !== "library"}><Library selectedFolder={route.folder} onFolderChange={folder => navigate({ ...route, folder })} onOpen={open} refresh={closed} onBookmarks={() => navigate({ ...route, tab, overlay: { kind: "bookmarks" } })} /></div>}
+      {favoritesOpened && <div hidden={tab !== "favorites"}><Favorites onOpen={open} /></div>}
+      {tab === "settings" && <Settings onLoggedOut={onUnauthorized} onDuplicates={() => navigate({ ...route, tab, overlay: { kind: "duplicates" } })} />}
 
-      {overlay?.kind === "clips" && <OverlayClips items={overlay.items} start={overlay.index} onClose={close} />}
+      {overlay?.kind === "clips" && <OverlayClips items={overlay.items} start={overlay.index} onClose={close} at={overlay.at} />}
       {overlay?.kind === "long" && overlay.items[overlay.index] && (
         <LongPlayer key={overlay.items[overlay.index].id} media={overlay.items[overlay.index]} next={overlay.items[overlay.index + 1]} onClose={close}
-          onNext={() => setOverlay({ ...overlay, index: overlay.index + 1 })} />
+          startAt={overlay.at} onNext={() => replace({ ...route, tab, overlay: { ...overlay, at: undefined, index: overlay.index + 1 } })} />
       )}
-      {overlay?.kind === "duplicates" && <Duplicates onClose={() => setOverlay(null)} />}
+      {overlay?.kind === "duplicates" && <Duplicates onClose={close} />}
+
+      {overlay?.kind === "bookmarks" && <div className="fixed inset-0 z-30 overflow-y-auto bg-bg"><BookmarkWall onBack={close} onOpen={(media, at) => open([media], 0, undefined, at)} /></div>}
 
       {!overlay && (
         <nav className={`fixed inset-x-0 bottom-0 z-10 flex justify-around px-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-6 ${tab === "feed" ? "bg-gradient-to-t from-black/80 to-transparent" : "border-t border-line bg-bg/90 pt-2 backdrop-blur-md"}`} aria-label="导航">
@@ -76,9 +88,9 @@ export function App() {
   );
 }
 
-function OverlayClips({ items, start, onClose }: { items: Media[]; start: number; onClose: () => void }) {
+function OverlayClips({ items, start, onClose, at }: { items: Media[]; start: number; onClose: () => void; at?: number }) {
   const [list, setList] = useState(items);
-  return <div className="fixed inset-0 z-30 bg-black"><ClipList items={list} setItems={setList} start={start} onClose={onClose} /></div>;
+  return <div className="fixed inset-0 z-30 bg-black"><ClipList items={list} setItems={setList} start={start} onClose={onClose} startAt={at} /></div>;
 }
 
 function NavItem({ label, active, onClick, children }: { label: string; active: boolean; onClick: () => void; children: React.ReactNode }) {

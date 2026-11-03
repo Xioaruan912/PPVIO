@@ -42,6 +42,7 @@ from ppvio.infrastructure.webdav_aiohttp import (
 )
 from ppvio.infrastructure.folder_catalog import LibraryCatalogSource
 from ppvio.infrastructure.rendition_maker import RenditionMaker
+from ppvio.infrastructure.seek_previews import SeekPreviewService
 from ppvio.infrastructure.webdav_read import (
     OpenListBatchDeleteAdapter,
     ReadOnlyWebDavAdapter,
@@ -305,6 +306,7 @@ async def run(settings: PlayerSettings) -> None:
             pass
     await repository.open()
     direct_reader: OpenListDirectReader | None = None
+    previews: SeekPreviewService | None = None
     try:
         await repository.recover_interrupted_favorite_sync()
         storage_settings = await repository.get_storage_settings()
@@ -413,6 +415,10 @@ async def run(settings: PlayerSettings) -> None:
             else False,
         )
         range_cache.open()
+        if shutil.which("ffmpeg"):
+            previews = SeekPreviewService(repository, reader, work_dir=settings.data_dir / "seek-previews",
+                                          is_playing=lambda: server_ref[0] is not None and server_ref[0].active_playback_streams > 0)
+            await previews.start()
         server = PlayerHttpServer(
             repository,
             SessionService(repository, access_secret=settings.access_secret),
@@ -437,6 +443,7 @@ async def run(settings: PlayerSettings) -> None:
             on_storage_changed=apply_storage,
             list_folders=list_folders,
             sync_status=sync_status,
+            previews=previews,
         )
         server_ref[0] = server
         runner = server.runner()
@@ -511,6 +518,8 @@ async def run(settings: PlayerSettings) -> None:
         await range_cache.shutdown()
         await runner.cleanup()
     finally:
+        if previews is not None:
+            await previews.close()
         for write_client in write_clients:
             await write_client.close()
         if client is not None:

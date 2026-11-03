@@ -30,6 +30,8 @@ from .read_mode import PlayerReadModeHttpMixin
 from .watched import PlayerWatchedHttpMixin
 from .duplicates import PlayerDuplicateReviewHttpMixin
 from .tags import PlayerTagHttpMixin
+from .bookmarks import PlayerBookmarkHttpMixin
+from .previews import PlayerPreviewHttpMixin
 
 from ppvio.application.auth import SessionService
 from ppvio.application.favorite_backup import FavoriteBackupService
@@ -93,7 +95,7 @@ _SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
 }
-class PlayerHttpServer(PlayerStatusHttpMixin, PlayerTagHttpMixin, PlayerDuplicateReviewHttpMixin, PlayerWatchedHttpMixin, PlayerHttpStreamingMixin, PlayerStorageSettingsHttpMixin, PlayerReadModeHttpMixin, PlayerLibraryHttpMixin, PlayerMediaHttpMixin):
+class PlayerHttpServer(PlayerPreviewHttpMixin, PlayerBookmarkHttpMixin, PlayerStatusHttpMixin, PlayerTagHttpMixin, PlayerDuplicateReviewHttpMixin, PlayerWatchedHttpMixin, PlayerHttpStreamingMixin, PlayerStorageSettingsHttpMixin, PlayerReadModeHttpMixin, PlayerLibraryHttpMixin, PlayerMediaHttpMixin):
     """Small authenticated HTTP boundary around Player-only services.
 
     This adapter intentionally accepts only Player repository IDs. It has no
@@ -130,6 +132,7 @@ class PlayerHttpServer(PlayerStatusHttpMixin, PlayerTagHttpMixin, PlayerDuplicat
         on_storage_changed: Callable[[PlayerStorageSettings], Awaitable[None]] | None = None,
         list_folders: Callable[[str], Awaitable[list[str]]] | None = None,
         sync_status: object | None = None,
+        previews: object | None = None,
     ) -> None:
         if min(
             max_streams, max_streams_per_client, max_header_size, stream_chunk_size, startup_range_bytes
@@ -165,6 +168,7 @@ class PlayerHttpServer(PlayerStatusHttpMixin, PlayerTagHttpMixin, PlayerDuplicat
         self._on_storage_changed = on_storage_changed
         self._list_folders = list_folders
         self._sync_status = sync_status
+        self._previews = previews
         self._storage_rate: dict[str, list[float]] = {}
         self._max_streams = max_streams
         self._stream_slots = asyncio.BoundedSemaphore(max_streams)
@@ -241,6 +245,8 @@ class PlayerHttpServer(PlayerStatusHttpMixin, PlayerTagHttpMixin, PlayerDuplicat
         self._register_watched_routes(app)
         self._register_duplicate_routes(app)
         self._register_tag_routes(app)
+        self._register_bookmark_routes(app)
+        self._register_preview_routes(app)
         app.router.add_get("/api/v1/videos", self._videos)
         app.router.add_get("/api/v1/groups/{group_id}/videos", self._group_videos)
         app.router.add_get("/api/v1/favorites", self._favorites)

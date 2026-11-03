@@ -204,7 +204,7 @@ class PlayerMediaHttpMixin:
 
     async def _discard_media_caches(self, media_id: str) -> None:
         """A removed media must not keep serving from any cache (and ends its streams)."""
-        for cache in (self._range_cache, self._faststart, self._startup_cache):
+        for cache in (self._range_cache, self._faststart, self._startup_cache, self._previews):
             discard = getattr(cache, "discard", None)
             if callable(discard):
                 await discard(media_id)

@@ -12,6 +12,11 @@ import { announce, Cover, formatDuration } from "../ui/Grid";
 import { setLongPlayback, useLocked } from "../ui/privacy";
 import { toast } from "../ui/toast";
 import { LoadingFeedback } from "../ui/LoadingFeedback";
+import { SeekBar } from "../ui/SeekBar";
+import { SeekPreview } from "../ui/SeekPreview";
+import { BookmarkButton } from "../ui/Bookmarks";
+import { useHorizontalSeek } from "./useHorizontalSeek";
+import { usePlaybackRecovery, RecoveryNotice } from "./usePlaybackRecovery";
 
 const SPEEDS = [1, 1.25, 1.5, 2];
 const SAVE_EVERY_MS = 10_000;
@@ -40,19 +45,12 @@ export function playerKey(key: string): PlayerKey | null {
 }
 
 /** The end of the buffered range the playhead is in, or the playhead itself. */
-function bufferedEnd(el: HTMLVideoElement): number {
-  for (let i = 0; i < el.buffered.length; i++) {
-    if (el.buffered.start(i) <= el.currentTime + 0.5 && el.currentTime <= el.buffered.end(i)) return el.buffered.end(i);
-  }
-  return el.currentTime;
-}
-
 type FullscreenVideo = HTMLVideoElement & { webkitEnterFullscreen?: () => void };
 
-export function LongPlayer({ media, next, onClose, onNext }: {
+export function LongPlayer({ media, next, onClose, onNext, startAt }: {
   media: Media; onClose: () => void;
   /** The next long video of the wall this one was opened from; it starts by itself when this one ends. */
-  next?: Media; onNext?: () => void;
+  next?: Media; onNext?: () => void; startAt?: number;
 }) {
   const prefs = usePrefs();
   const locked = useLocked();
@@ -61,7 +59,6 @@ export function LongPlayer({ media, next, onClose, onNext }: {
   const [playing, setPlaying] = useState(false);
   const [controls, setControls] = useState(true);
   const [time, setTime] = useState(0);
-  const [buffered, setBuffered] = useState(0);
   const [duration, setDuration] = useState(media.duration_seconds ?? 0);
   const [speed, setSpeed] = useState(1);
   const [fast, setFast] = useState(false);
@@ -72,21 +69,34 @@ export function LongPlayer({ media, next, onClose, onNext }: {
   const [failed, setFailed] = useState(false);
   const [menu, setMenu] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
-  const resume = useRef(0);
+  const resume = useRef(startAt ?? 0);
   const src = chooseStream(media, prefs.lowRes);
+  const changeQuality = (low: boolean) => {
+    const el = video.current;
+    resume.current = el?.currentTime ?? 0;
+    if (el) el.autoplay = !el.paused;
+    setPref("lowRes", low);
+  };
   const hasLow = media.variants.some(v => v.height && v.height < (media.height ?? Infinity));
   const title = media.groups?.[0]?.label;
   const pip = document.pictureInPictureEnabled;
 
+  const horizontal = useHorizontalSeek(video, src, !locked);
+  const recovery = usePlaybackRecovery(video, src, !locked);
+
   useEffect(() => { setLongPlayback(true); return () => setLongPlayback(false); }, []);
   useEffect(() => {
+    if (startAt !== undefined) return;
+    let live = true;
     void api.longProgress().then(p => {
+      if (!live) return;
       resume.current = resumeAt(p.items.find(i => i.id === media.id)?.position_seconds, media.duration_seconds);
       // The video may have loaded before the saved position arrived.
       const el = video.current;
       if (el && resume.current && el.readyState >= 1 && el.currentTime < 1) el.currentTime = resume.current;
     }).catch(() => undefined);
-  }, [media.id, media.duration_seconds]);
+    return () => { live = false; };
+  }, [media.id, media.duration_seconds, startAt]);
   useEffect(() => { if (locked) video.current?.pause(); }, [locked]);
 
   // Save where we are while playing, when the app goes to the background, and once more on the way out.
@@ -199,14 +209,12 @@ export function LongPlayer({ media, next, onClose, onNext }: {
     return () => clearTimeout(timer);
   }, [countdown, onNext]);
 
-  const pct = (value: number) => `${duration ? Math.min(100, (value / duration) * 100) : 0}%`;
-
   return (
     <div ref={root} className="fixed inset-0 z-30 bg-black">
       <video ref={video} src={src} playsInline autoPlay className="size-full object-contain"
         onLoadedMetadata={event => {
           setDuration(event.currentTarget.duration);
-          if (resume.current) event.currentTarget.currentTime = resume.current;
+          if (resume.current) { event.currentTarget.currentTime = resume.current; resume.current = 0; }
           event.currentTarget.playbackRate = speed;
         }}
         onError={() => { setFailed(true); setLoading(false); }}
@@ -219,26 +227,18 @@ export function LongPlayer({ media, next, onClose, onNext }: {
         onPlay={event => { setPlaying(true); setCountdown(null); setLoading(event.currentTarget.readyState < 3); }}
         onPause={() => { setPlaying(false); setControls(true); setLoading(false); }}
         onEnded={() => { if (next && onNext) setCountdown(NEXT_IN_SECONDS); }}
-        onProgress={event => setBuffered(bufferedEnd(event.currentTarget))}
-        onTimeUpdate={event => { setTime(event.currentTarget.currentTime); setBuffered(bufferedEnd(event.currentTarget)); }} />
+        onTimeUpdate={event => setTime(event.currentTarget.currentTime)} />
 
       <div className="absolute inset-0 touch-none select-none"
-        onPointerDown={event => gestures.current?.down(event.clientX, event.clientY, performance.now())}
-        onPointerMove={event => { gestures.current?.move(event.clientX, event.clientY); if (event.pointerType === "mouse") setControls(true); }}
-        onPointerUp={event => gestures.current?.up(event.clientX, performance.now())}
-        onPointerCancel={() => gestures.current?.cancel()}
+        onPointerDown={event => { horizontal.down(event.clientX, event.clientY); gestures.current?.down(event.clientX, event.clientY, performance.now()); }}
+        onPointerMove={event => { if (horizontal.move(event.clientX, event.clientY)) { event.currentTarget.setPointerCapture?.(event.pointerId); gestures.current?.cancel(); } else gestures.current?.move(event.clientX, event.clientY); if (event.pointerType === "mouse") setControls(true); }}
+        onPointerUp={event => { if (horizontal.up(event.clientX, event.clientY)) gestures.current?.cancel(); else gestures.current?.up(event.clientX, performance.now()); }}
+        onPointerCancel={() => { horizontal.cancel(); gestures.current?.cancel(); }}
         onContextMenu={event => event.preventDefault()} />
 
       <LoadingFeedback video={video} source={src} waiting={loading} enabled={!locked && !failed} />
-      {failed && (
-        <div className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 px-6 text-center text-[14px] text-white/80">
-          <p>这个视频在当前浏览器放不了</p>
-          {hasLow && !prefs.lowRes && (
-            <button type="button" onClick={() => { setFailed(false); setPref("lowRes", true); }}
-              className="pointer-events-auto mt-3 rounded-full bg-white/15 px-4 py-2 text-[14px] font-semibold text-white">换低清试试</button>
-          )}
-        </div>
-      )}
+      <RecoveryNotice {...recovery} compatible={hasLow && !prefs.lowRes ? () => changeQuality(true) : undefined} />
+      {horizontal.target !== null && <div className="pointer-events-none absolute inset-x-0 bottom-40"><SeekPreview id={media.id} time={horizontal.target} enabled={!locked} /></div>}
 
       <AnimatePresence>
         {jump && (
@@ -261,19 +261,11 @@ export function LongPlayer({ media, next, onClose, onNext }: {
                 className="grid size-10 place-items-center rounded-full">
                 <HeartIcon size={26} weight="fill" className={favorite ? "text-accent" : "text-white"} />
               </button>
+              <BookmarkButton media={media} video={video} enabled={!locked} />
               <button type="button" onClick={() => setMenu(true)} aria-label="更多" className="grid size-10 place-items-center rounded-full"><DotsThreeIcon size={26} weight="bold" /></button>
             </div>
             <div className="pointer-events-auto px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-              <div className="relative h-6 w-full">
-                <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 overflow-hidden rounded-full bg-white/20">
-                  <div className="absolute inset-y-0 left-0 bg-white/35" style={{ width: pct(buffered) }} />
-                  <div className="absolute inset-y-0 left-0 bg-accent" style={{ width: pct(time) }} />
-                </div>
-                <span className="pointer-events-none absolute top-1/2 size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow" style={{ left: pct(time) }} />
-                <input type="range" min={0} max={duration || 0} step={1} value={Math.min(time, duration || 0)} aria-label="播放进度"
-                  onChange={event => { if (video.current) video.current.currentTime = Number(event.target.value); }}
-                  className="absolute inset-0 h-full w-full cursor-pointer opacity-0" />
-              </div>
+              <SeekBar video={video} source={src} mediaId={media.id} duration={duration} enabled={!locked} />
               <div className="mt-1 flex items-center gap-1 text-white">
                 <button type="button" onClick={toggle} aria-label={playing ? "暂停" : "播放"} className="grid size-10 place-items-center">
                   {playing ? <PauseIcon size={26} weight="fill" /> : <PlayIcon size={26} weight="fill" />}
@@ -290,8 +282,8 @@ export function LongPlayer({ media, next, onClose, onNext }: {
                   {speed}×
                 </button>
                 {hasLow && (
-                  <button type="button" className="ml-1 rounded-full bg-white/15 px-2.5 py-1 text-[13px] font-semibold"
-                    onClick={() => { resume.current = video.current?.currentTime ?? 0; setPref("lowRes", !prefs.lowRes); }}>
+                  <button type="button" className="ml-1 shrink-0 whitespace-nowrap rounded-full bg-white/15 px-2.5 py-1 text-[13px] font-semibold"
+                    onClick={() => changeQuality(!prefs.lowRes)}>
                     {prefs.lowRes ? "低清" : "原画"}
                   </button>
                 )}

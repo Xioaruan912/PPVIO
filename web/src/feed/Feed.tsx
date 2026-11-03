@@ -17,7 +17,7 @@ export function mergeFeed(current: Media[], incoming: Media[]): Media[] {
  * Clips one per screen, swiped vertically. Shared by the feed and by any wall a
  * clip is opened from (library, favorites, a folder).
  */
-export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, organize = false }: {
+export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, organize = false, enabled = true, startAt }: {
   items: Media[];
   setItems: (update: (list: Media[]) => Media[]) => void;
   start?: number;
@@ -25,6 +25,7 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, organ
   onClose?: () => void;
   /** 整理模式: big delete / favorite / skip buttons for a quick clean-up pass. */
   organize?: boolean;
+  enabled?: boolean; startAt?: number;
 }) {
   const [active, setActive] = useState(start);
   const container = useRef<HTMLDivElement>(null);
@@ -45,8 +46,8 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, organ
   // Open on the clip that was tapped.
   useLayoutEffect(() => {
     const el = container.current;
-    if (el && start) el.scrollTop = start * el.clientHeight;
-  }, [start]);
+    if (el && enabled) el.scrollTop = active * el.clientHeight;
+  }, [start, enabled]);
 
   useEffect(() => { if (onNearEnd && active >= items.length - 3) onNearEnd(); }, [active, items.length, onNearEnd]);
 
@@ -120,9 +121,9 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, organ
       )}
       {items.map((item, index) => (
         <div key={item.id} data-index={index}>
-          <FeedItem media={item} active={index === active} mounted={Math.abs(index - active) <= 1}
+          <FeedItem media={item} active={enabled && index === active} mounted={enabled && Math.abs(index - active) <= 1}
             eager={index === active + 1 && preloadNext} onBufferReadiness={onBufferReadiness}
-            onFavorite={setFavorite} onRemove={item.deletable ? remove : undefined} raised={organize} />
+            onFavorite={setFavorite} onRemove={item.deletable ? remove : undefined} raised={organize} startAt={index === start ? startAt : undefined} />
         </div>
       ))}
     </div>
@@ -141,7 +142,7 @@ function OrganizeButton({ label, accent, disabled, onClick, children }: {
   );
 }
 
-export function Feed({ onUnauthorized }: { onUnauthorized: () => void }) {
+export function Feed({ onUnauthorized, enabled = true }: { onUnauthorized: () => void; enabled?: boolean }) {
   const [items, setItems] = useState<Media[]>([]);
   const [organize, setOrganize] = useState(false);
   const [state, setState] = useState<"loading" | "ready" | "empty" | "error">("loading");
@@ -173,7 +174,7 @@ export function Feed({ onUnauthorized }: { onUnauthorized: () => void }) {
         className={`fixed right-3 top-[max(0.75rem,env(safe-area-inset-top))] z-20 h-9 rounded-full px-4 text-[14px] font-semibold backdrop-blur-md ${organize ? "bg-accent text-white" : "bg-black/45 text-white"}`}>
         {organize ? "完成" : "整理"}
       </button>
-      <ClipList items={items} setItems={setItems} onNearEnd={load} organize={organize} />
+      <ClipList items={items} setItems={setItems} onNearEnd={load} organize={organize} enabled={enabled} />
     </>
   );
 }

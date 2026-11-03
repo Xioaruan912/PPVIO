@@ -1,7 +1,8 @@
 import { EyeIcon, EyeSlashIcon } from "@phosphor-icons/react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Media } from "../api";
 import { setPref, usePrefs } from "../prefs";
+import { PreviewButton } from "./SeekPreview";
 
 export function formatDuration(seconds: number | null): string {
   if (!seconds || !Number.isFinite(seconds)) return "";
@@ -11,32 +12,39 @@ export function formatDuration(seconds: number | null): string {
 }
 
 /** A wall of covers; reaching its end asks for the next page. ``progress`` maps id to seconds watched. */
-export function Grid({ items, onOpen, onEnd, done, wide, progress }: {
-  items: Media[]; onOpen: (index: number) => void; onEnd: () => void; done: boolean; wide?: boolean; progress?: Map<string, number>;
+export function Grid({ items, onOpen, onEnd, done, error, onRetry, wide, progress }: {
+  items: Media[]; onOpen: (index: number, at?: number) => void; onEnd: () => void; done: boolean; error?: boolean;
+  onRetry?: () => void; wide?: boolean; progress?: Map<string, number>;
 }) {
   const prefs = usePrefs();
   const sentinel = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = sentinel.current;
-    if (!el || done) return;
+    if (!el || done || error) return;
     const observer = new IntersectionObserver(entries => { if (entries[0]?.isIntersecting) onEnd(); }, { rootMargin: "600px" });
     observer.observe(el);
     return () => observer.disconnect();
-  }, [onEnd, done, items.length]);
+  }, [onEnd, done, error, items.length]);
   return (
     <>
       <div className={`grid gap-1.5 ${wide ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4" : "grid-cols-3 sm:grid-cols-4 lg:grid-cols-6"}`}>
         {items.map((item, index) => (
-          <button key={item.id} type="button" onClick={() => onOpen(index)} aria-label={`播放第 ${index + 1} 个视频`}
-            className={`relative overflow-hidden rounded-[10px] bg-surface ${wide ? "aspect-video" : "aspect-[3/4]"}`}>
-            {item.cover_url && <Cover src={item.cover_url}
-              className={`size-full object-cover transition-[filter] duration-300 ${prefs.coverBlur ? "blur-xl scale-110" : ""}`} />}
-            <span className="absolute bottom-1 right-1.5 rounded bg-black/55 px-1 text-[11px] tabular-nums text-white">{formatDuration(item.duration_seconds)}</span>
-            <WatchedBar seconds={progress?.get(item.id)} duration={item.duration_seconds} />
-          </button>
+          <div key={item.id} className="relative min-w-0">
+            <button type="button" onClick={() => onOpen(index)} aria-label={`播放第 ${index + 1} 个视频`}
+              className={`relative block w-full overflow-hidden rounded-[10px] bg-surface ${wide ? "aspect-video" : "aspect-[3/4]"}`}>
+              {item.cover_url && <Cover src={item.cover_url}
+                className={`size-full object-cover transition-[filter] duration-300 ${prefs.coverBlur ? "blur-xl scale-110" : ""}`} />}
+              <span className="absolute bottom-1 right-1.5 rounded bg-black/55 px-1 text-[11px] tabular-nums text-white">{formatDuration(item.duration_seconds)}</span>
+              <WatchedBar seconds={progress?.get(item.id)} duration={item.duration_seconds} />
+            </button>
+            <PreviewButton media={item} onPlay={at => onOpen(index, at)} />
+          </div>
         ))}
       </div>
-      {!done && <div ref={sentinel} className="h-10" />}
+      {error ? <div role="alert" className="flex items-center justify-center gap-3 py-6 text-[14px] text-muted">
+        加载失败
+        {onRetry && <button type="button" aria-label="重试加载" onClick={onRetry} className="min-h-10 rounded-full bg-surface px-4 text-ink">重试</button>}
+      </div> : !done && <div ref={sentinel} className="h-10" />}
     </>
   );
 }
@@ -84,7 +92,7 @@ export function usePages(fetchPage: (cursor: string | null, offset: number) => P
   const [items, setItems] = useState<Media[]>([]);
   const [done, setDone] = useState(false);
   const [error, setError] = useState(false);
-  const state = useRef({ cursor: null as string | null, busy: false, key });
+  const state = useRef({ cursor: null as string | null, busy: false, key, done: false, error: false, offset: 0, active: true });
   useEffect(() => {
     const apply = (change: Change) => setItems(list => "removed" in change
       ? list.filter(m => m.id !== change.id)
@@ -92,19 +100,32 @@ export function usePages(fetchPage: (cursor: string | null, offset: number) => P
     changeListeners.add(apply);
     return () => { changeListeners.delete(apply); };
   }, []);
-  useEffect(() => { state.current = { cursor: null, busy: false, key }; setItems([]); setDone(false); setError(false); }, [key]);
-  const more = async () => {
+  useEffect(() => {
+    const generation = { cursor: null as string | null, busy: false, key, done: false, error: false, offset: 0, active: true };
+    state.current = generation;
+    setItems([]); setDone(false); setError(false);
+    return () => { generation.active = false; };
+  }, [key]);
+  const load = useCallback(async (retry: boolean) => {
     const s = state.current;
-    if (s.busy || done) return;
+    if (!s.active || s.key !== key || s.busy || s.done || (s.error && !retry)) return;
     s.busy = true;
+    s.error = false; setError(false);
     try {
-      const page = await fetchPage(s.cursor, items.length);
-      if (state.current.key !== s.key) return;
+      const page = await fetchPage(s.cursor, s.offset);
+      if (!s.active || state.current !== s) return;
       s.cursor = page.next_cursor ?? null;
+      s.offset += page.items.length;
       setItems(list => { const seen = new Set(list.map(m => m.id)); return [...list, ...page.items.filter(m => !seen.has(m.id))]; });
-      if (!page.has_more || !page.items.length) setDone(true);
-    } catch { setError(true); setDone(true); }
+      s.done = !page.has_more || !page.items.length;
+      setDone(s.done);
+    } catch {
+      if (!s.active || state.current !== s) return;
+      s.error = true; setError(true);
+    }
     finally { s.busy = false; }
-  };
-  return { items, setItems, done, error, more };
+  }, [fetchPage, key]);
+  const more = useCallback(() => load(false), [load]);
+  const retry = useCallback(() => load(true), [load]);
+  return { items, setItems, done, error, more, retry };
 }

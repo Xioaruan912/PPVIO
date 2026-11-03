@@ -1,19 +1,21 @@
 import { CaretLeftIcon, CaretRightIcon, FolderIcon } from "@phosphor-icons/react";
-import { useCallback, useEffect, useState } from "react";
-import { api, type LibraryDate, type LibraryFolder, type Media, type Tag } from "../api";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { api, type LibraryDate, type LibraryFolder, type Media, type Tag, type VideoFilters, type VideoSort } from "../api";
 import { usePrefs } from "../prefs";
 import { BlurToggle, Cover, formatDuration, Grid, usePages, WatchedBar } from "../ui/Grid";
 
-export type Open = (items: Media[], index: number, more?: () => void) => void;
+export type Open = (items: Media[], index: number, more?: () => void, at?: number) => void;
 
 type View = "short" | "long" | "folders";
 
 type Recent = Media & { position_seconds: number };
 
 /** ``refresh`` changes whenever a player closes, so watch progress is re-read. */
-export function Library({ onOpen, refresh = 0 }: { onOpen: Open; refresh?: number }) {
+export function Library({ onOpen, onBookmarks, refresh = 0, selectedFolder, onFolderChange }: { onOpen: Open; onBookmarks?: () => void; refresh?: number; selectedFolder?: LibraryFolder | null; onFolderChange?: (folder: LibraryFolder | null) => void }) {
   const [view, setView] = useState<View>("short");
-  const [folder, setFolder] = useState<LibraryFolder | null>(null);
+  const [localFolder, setLocalFolder] = useState<LibraryFolder | null>(null);
+  const folder = selectedFolder === undefined ? localFolder : selectedFolder;
+  const setFolder = onFolderChange ?? setLocalFolder;
   return (
     <main className="mx-auto min-h-dvh max-w-6xl px-3 pb-32 pt-[max(1.25rem,env(safe-area-inset-top))]">
       <header className="mb-4 flex items-center gap-3 px-1">
@@ -21,6 +23,7 @@ export function Library({ onOpen, refresh = 0 }: { onOpen: Open; refresh?: numbe
           <button type="button" onClick={() => setFolder(null)} aria-label="返回文件夹" className="grid size-10 place-items-center rounded-full bg-surface"><CaretLeftIcon size={20} /></button>
         ) : null}
         <h1 className="min-w-0 flex-1 truncate text-[26px] font-semibold tracking-tight">{folder ? folder.label : "片库"}</h1>
+        {onBookmarks && <button type="button" onClick={onBookmarks} className="min-h-10 rounded-full bg-surface px-4 text-[14px]">片段</button>}
         <BlurToggle />
       </header>
       {folder ? <FolderWall folder={folder} onOpen={onOpen} /> : (
@@ -41,6 +44,9 @@ export function Library({ onOpen, refresh = 0 }: { onOpen: Open; refresh?: numbe
 function CategoryWall({ category, onOpen, refresh }: { category: "short" | "long"; onOpen: Open; refresh: number }) {
   const [tags, setTags] = useState<Tag[]>([]);
   const [tag, setTag] = useState<number | null>(null);
+  const [sort, setSort] = useState<VideoSort>("newest");
+  const [unwatched, setUnwatched] = useState(false);
+  const [timeband, setTimeband] = useState("all");
   const [recent, setRecent] = useState<Recent[]>([]);
   const [progress, setProgress] = useState<Map<string, number>>(new Map());
   useEffect(() => { void api.tags().then(t => setTags(t.items.filter(x => x.count > 0))).catch(() => undefined); }, []);
@@ -51,12 +57,31 @@ function CategoryWall({ category, onOpen, refresh }: { category: "short" | "long
       setProgress(new Map(p.items.map(i => [i.id, i.position_seconds])));
     }).catch(() => undefined);
   }, [category, refresh]);
-  const fetchPage = useCallback((_: string | null, offset: number) => api.videos(category, offset, 20, tag), [category, tag]);
-  const pages = usePages(fetchPage, `${category}:${tag}`);
-  useEffect(() => { void pages.more(); }, [category, tag]);
+  const filters = useMemo<VideoFilters>(() => ({ sort, unwatched,
+    seed: sort === "random" ? Math.floor(Math.random() * 2147483647) : undefined,
+    min_seconds: timeband === "medium" ? 60 : timeband === "long" ? 300 : undefined,
+    max_seconds: timeband === "short" ? 60 : timeband === "medium" ? 300 : undefined,
+  }), [category, tag, sort, unwatched, timeband]);
+  const fetchPage = useCallback((_: string | null, offset: number) => api.videos(category, offset, 20, tag, filters), [category, tag, filters]);
+  const pages = usePages(fetchPage, JSON.stringify([category, tag, filters]));
+  useEffect(() => { void pages.more(); }, [pages.more]);
   return (
     <>
       {category === "long" && tag === null && recent.length > 0 && <ContinueRow items={recent} onOpen={onOpen} />}
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-[13px]">
+        <select aria-label="排序" value={sort} onChange={event => setSort(event.target.value as VideoSort)}
+          className="min-h-10 min-w-0 flex-1 rounded-full bg-surface px-3 text-ink">
+          <option value="newest">最新</option><option value="longest">时长最长</option>
+          <option value="largest">体积最大</option><option value="random">随机</option>
+        </select>
+        <select aria-label="时长范围" value={timeband} onChange={event => setTimeband(event.target.value)}
+          className="min-h-10 min-w-0 flex-1 rounded-full bg-surface px-3 text-ink">
+          <option value="all">全部时长</option><option value="short">1 分钟内</option>
+          <option value="medium">1–5 分钟</option><option value="long">5 分钟以上</option>
+        </select>
+        <button type="button" aria-label="只看未看" aria-pressed={unwatched} onClick={() => setUnwatched(value => !value)}
+          className={`min-h-10 shrink-0 rounded-full px-3 ${unwatched ? "bg-ink font-semibold text-bg" : "bg-surface text-muted"}`}>只看未看</button>
+      </div>
       {tags.length > 0 && (
         <div className="-mx-3 mb-3 flex gap-2 overflow-x-auto px-3 [scrollbar-width:none]">
           {[{ id: null, name: "全部" } as { id: number | null; name: string }, ...tags].map(t => (
@@ -65,10 +90,9 @@ function CategoryWall({ category, onOpen, refresh }: { category: "short" | "long
           ))}
         </div>
       )}
-      {pages.error && !pages.items.length ? <Empty>加载失败，稍后再试</Empty>
-        : pages.done && !pages.items.length ? <Empty>{tag !== null ? "这个标签下还没有视频" : category === "long" ? "还没有长视频" : "还没有短视频"}</Empty>
+      {pages.done && !pages.items.length ? <Empty>{tag !== null ? "这个标签下还没有视频" : category === "long" ? "还没有长视频" : "还没有短视频"}</Empty>
         : <Grid items={pages.items} wide={category === "long"} progress={category === "long" ? progress : undefined} done={pages.done} onEnd={() => void pages.more()}
-            onOpen={index => onOpen(pages.items, index, () => void pages.more())} />}
+            error={pages.error} onRetry={() => void pages.retry()} onOpen={(index, at) => onOpen(pages.items, index, () => void pages.more(), at)} />}
     </>
   );
 }
@@ -100,7 +124,7 @@ function FolderWall({ folder, onOpen }: { folder: LibraryFolder; onOpen: Open })
   const pages = usePages(fetchPage, folder.id);
   useEffect(() => { void pages.more(); }, [folder.id]);
   return <Grid items={pages.items} done={pages.done} onEnd={() => void pages.more()}
-    onOpen={index => onOpen(pages.items, index, () => void pages.more())} />;
+    error={pages.error} onRetry={() => void pages.retry()} onOpen={(index, at) => onOpen(pages.items, index, () => void pages.more(), at)} />;
 }
 
 /** Plain folders by their names first, then Archive batches by date. */

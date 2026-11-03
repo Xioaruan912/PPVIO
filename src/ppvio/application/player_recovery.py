@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
 from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 import hashlib
 import json
+import logging
 from pathlib import PurePosixPath
 import re
 from typing import Any
@@ -15,6 +17,7 @@ from ppvio.application.ports import (
     PlayerStateCipherPort,
     WebDavWriteClient,
 )
+from ppvio.domain.bookmarks import PlayerBookmark, validate_bookmarks
 from ppvio.domain.storage_settings import (
     PlayerStorageSettings,
     safe_storage_relpath,
@@ -27,21 +30,25 @@ FAVORITES_CONTEXT = b"tgvio-player-favorites-v1"
 USERNAME_CONTEXT = b"webdav-username"
 PASSWORD_CONTEXT = b"webdav-password"
 # The favorites manifest is the one snapshot whose *contents* grow with a feature:
-# v2 adds user collections. Older payloads stay valid input (they carry no
+# v2 adds user collections; v3 adds per-video bookmarks. Older payloads stay valid input (they carry no
 # collections), and the encryption contexts above must never change with it - those
 # strings are part of the key derivation, so bumping one would make every existing
 # backup undecryptable.
-MANIFEST_SCHEMA_VERSION = 2
+MANIFEST_SCHEMA_VERSION = 3
 # The backup lives inside the video folder under plain names; 99_TGPLAYER is the
 # name earlier installs used there, and is renamed on first contact.
 BACKUP_DIR = "收藏"
 FAVORITES_DIR = "全部"
 LEGACY_BACKUP_DIR = "99_TGPLAYER"
-_SUPPORTED_MANIFEST_VERSIONS = (1, MANIFEST_SCHEMA_VERSION)
+_SUPPORTED_MANIFEST_VERSIONS = (1, 2, MANIFEST_SCHEMA_VERSION)
 _MAX_SNAPSHOT_BYTES = 16 * 1024 * 1024
 # Snapshot revisions kept on the storage: the one the pointer names and two before it.
 _KEPT_REVISIONS = 3
 _MEDIA_ID_RE = re.compile(r"^[0-9a-f]{64}$")
+_BOOKMARK_SNAPSHOT_RETRY_SECONDS = 30
+_BOOKMARK_SNAPSHOT_IDLE_SECONDS = 5
+_BOOKMARK_SNAPSHOT_TIMEOUT_SECONDS = 30
+_LOG = logging.getLogger("ppvio.player_recovery")
 
 
 class RecoveryError(RuntimeError):
@@ -226,6 +233,23 @@ class PlayerRecoveryService:
         self._repository = repository
         self._cipher = cipher
         self._client_factory = client_factory
+        self._snapshot_lock = asyncio.Lock()
+
+    async def run_bookmark_snapshots(self, wake: asyncio.Event) -> None:
+        """One cancellable exporter; local dirty revisions survive any failed attempt."""
+        while True:
+            wake.clear()
+            if await self._repository.pending_bookmark_snapshot_revision() is not None:
+                try:
+                    await asyncio.wait_for(self.export_state(), timeout=_BOOKMARK_SNAPSHOT_TIMEOUT_SECONDS)
+                except Exception as exc:  # a remote outage must never discard a local bookmark
+                    _LOG.warning("Bookmark snapshot retry pending error=%s", type(exc).__name__)
+                    await asyncio.sleep(_BOOKMARK_SNAPSHOT_RETRY_SECONDS)
+                    continue
+            try:
+                await asyncio.wait_for(wake.wait(), timeout=_BOOKMARK_SNAPSHOT_IDLE_SECONDS)
+            except TimeoutError:
+                pass
 
     def encrypt_credentials(self, username: str, password: str) -> tuple[bytes, bytes]:
         if not username or not password:
@@ -241,7 +265,30 @@ class PlayerRecoveryService:
             self._decrypt_credential(settings.password_ciphertext, PASSWORD_CONTEXT),
         )
 
+    async def save_settings(
+        self, settings: PlayerStorageSettings, *, libraries: tuple[str, ...], auto_backup: bool = False,
+    ) -> PlayerStorageSettings:
+        """Save configuration and its snapshot without an older exporter overwriting it."""
+        async with self._snapshot_lock:
+            current = await self._repository.get_storage_settings()
+            settings = replace(settings, revision=max(settings.revision, current.revision + 1))
+            if auto_backup:
+                settings = await self.place_backup_under(settings)
+            await self._repository.save_storage_settings(settings)
+            await self._repository.save_libraries(libraries)
+            try:
+                await self._export_state()
+            except Exception as exc:
+                # A remote outage keeps the validated local configuration, as before.
+                _LOG.warning("Player state export after save failed: category=%s", type(exc).__name__)
+            return await self._repository.get_storage_settings()
+
     async def export_state(self) -> RecoverySnapshotReceipt:
+        async with self._snapshot_lock:
+            return await self._export_state()
+
+    async def _export_state(self) -> RecoverySnapshotReceipt:
+        bookmark_revision = await self._repository.pending_bookmark_snapshot_revision()
         current = await self._repository.get_storage_settings()
         client = self._client_for_settings(current)
         try:
@@ -254,6 +301,7 @@ class PlayerRecoveryService:
             favorites = await self._list_favorites()
             pending_jobs = await self._repository.list_pending_favorite_sync()
             collections = await self._list_collections()
+            bookmarks = await self._repository.export_bookmarks()
             config_store = EncryptedManifestStore(
                 client, self._cipher, root, context=CONFIG_CONTEXT, name="player-config",
             )
@@ -270,7 +318,7 @@ class PlayerRecoveryService:
             settings = replace(current, revision=revision)
             config = self._config_snapshot(settings)
             manifest = self._manifest_snapshot(
-                settings, revision, favorites, location_by_id, pending_jobs, collections,
+                settings, revision, favorites, location_by_id, pending_jobs, collections, bookmarks,
             )
             await config_store.save_atomic(config)
             await manifest_store.save_atomic(manifest)
@@ -278,6 +326,7 @@ class PlayerRecoveryService:
                 if job.operation == "delete":
                     await self._repository.mark_favorite_delete_intent(job.media_id)
             await self._repository.save_storage_settings(settings)
+            await self._repository.acknowledge_bookmark_snapshot(bookmark_revision)
             return RecoverySnapshotReceipt(revision, len(favorites))
         except RecoveryError:
             raise
@@ -287,6 +336,10 @@ class PlayerRecoveryService:
             await self._close(client)
 
     async def restore(self, bootstrap: WebDavBootstrap) -> RecoveryResult:
+        async with self._snapshot_lock:
+            return await self._restore(bootstrap)
+
+    async def _restore(self, bootstrap: WebDavBootstrap) -> RecoveryResult:
         try:
             endpoint = validate_webdav_endpoint(bootstrap.endpoint_url)
             root = safe_storage_relpath(bootstrap.player_root)
@@ -325,6 +378,7 @@ class PlayerRecoveryService:
             # Validated before anything is written: a payload this build cannot read
             # must fail the restore while the old state is still intact.
             collections = self._read_collections(manifest)
+            bookmarks = self._read_bookmarks(manifest)
 
             verified: list[tuple[str, str, int, str, int, str]] = []
             deleting: list[tuple[str, str, int, str, int]] = []
@@ -372,6 +426,8 @@ class PlayerRecoveryService:
                     raise RecoveryError("remote favorite copy is missing or has the wrong size")
                 verified.append((media_id, safe_relpath, stat.size_bytes, mime_type, created_at, state))
 
+            # The bookmark merge is atomic and detects local conflicts before other state changes.
+            await self._repository.restore_bookmarks(bookmarks)
             # Snapshots older than archive_root keep the locally set folder.
             await self._repository.save_storage_settings(replace(
                 settings, revision=revision, archive_root=settings.archive_root or local.archive_root,
@@ -429,6 +485,11 @@ class PlayerRecoveryService:
         return replace(settings, player_root=root, favorites_dir=FAVORITES_DIR)
 
     async def migrate_target(self, new_settings: PlayerStorageSettings) -> TargetMigrationResult:
+        async with self._snapshot_lock:
+            return await self._migrate_target(new_settings)
+
+    async def _migrate_target(self, new_settings: PlayerStorageSettings) -> TargetMigrationResult:
+        bookmark_revision = await self._repository.pending_bookmark_snapshot_revision()
         old_settings = await self._repository.get_storage_settings()
         try:
             endpoint = validate_webdav_endpoint(new_settings.endpoint_url)
@@ -509,11 +570,12 @@ class PlayerRecoveryService:
             favorite_rows = await self._list_favorites()
             pending_jobs = await self._repository.list_pending_favorite_sync()
             collections = await self._list_collections()
+            bookmarks = await self._repository.export_bookmarks()
             config = self._config_snapshot(new_settings)
             location_by_id = {item[0]: item[1:] for item in migrated_locations}
             manifest = self._manifest_snapshot(
                 new_settings, new_settings.revision, favorite_rows, location_by_id,
-                pending_jobs, collections,
+                pending_jobs, collections, bookmarks,
             )
             await config_store.save_atomic(config)
             await manifest_store.save_atomic(manifest)
@@ -523,6 +585,7 @@ class PlayerRecoveryService:
             await self._repository.save_storage_settings(new_settings)
             for media_id, relpath, size, mime in migrated_locations:
                 await self._repository.save_favorite_location(media_id, relpath, size, mime)
+            await self._repository.acknowledge_bookmark_snapshot(bookmark_revision)
             return TargetMigrationResult(True, new_settings.revision, len(migrated_locations))
         except RecoveryError:
             raise
@@ -567,6 +630,26 @@ class PlayerRecoveryService:
                 "items": members,
             })
         return payload
+
+    @staticmethod
+    def _read_bookmarks(manifest: dict[str, Any]) -> list[PlayerBookmark]:
+        if "bookmarks" not in manifest and manifest["schema_version"] < 3:
+            return []
+        raw = manifest.get("bookmarks")
+        if not isinstance(raw, list):
+            raise RecoveryError("remote bookmarks manifest is invalid")
+        try:
+            bookmarks = []
+            for entry in raw:
+                if not isinstance(entry, dict):
+                    raise ValueError
+                bookmarks.append(PlayerBookmark(
+                    entry["id"], entry["media_id"], entry["position_seconds"],
+                    entry.get("name"), entry["created_at"],
+                ))
+            return validate_bookmarks(bookmarks)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RecoveryError("remote bookmark record is invalid") from exc
 
     @staticmethod
     def _read_collections(manifest: dict[str, Any]) -> list[dict[str, Any]]:
@@ -649,6 +732,7 @@ class PlayerRecoveryService:
         location_by_id: dict[str, tuple[str, int, str]],
         pending_jobs: list[Any],
         collections: list[dict[str, Any]],
+        bookmarks: list[PlayerBookmark],
     ) -> dict[str, Any]:
         items: list[dict[str, Any]] = []
         for media_id, created_at in favorites:
@@ -687,6 +771,7 @@ class PlayerRecoveryService:
             "revision": revision,
             "items": items,
             "collections": collections,
+            "bookmarks": [asdict(bookmark) for bookmark in bookmarks],
         }
 
     def _settings_from_snapshot(self, config: dict[str, Any]) -> PlayerStorageSettings:

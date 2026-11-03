@@ -45,6 +45,10 @@ export interface Status {
   backup: { pending: number; failed: number; last_success_at: number | null };
 }
 export type Category = "short" | "long" | "all";
+export type VideoSort = "newest" | "longest" | "largest" | "random" | "resume";
+export interface VideoFilters {
+  sort?: VideoSort; seed?: number; unwatched?: boolean; min_seconds?: number; max_seconds?: number;
+}
 export interface Tag { id: number; name: string; count: number }
 
 const q = (params: Record<string, string | number | null | undefined>) =>
@@ -56,8 +60,10 @@ export const api = {
   logout: () => request<{ authenticated: boolean }>("/api/v1/auth/logout", json("POST")),
   feed: (limit = 6) => request<{ items: Media[] }>(`/api/v1/feed?limit=${limit}`),
   favorite: (id: string, on: boolean) => request<{ favorite: boolean }>(`/api/v1/media/${id}/favorite`, { method: on ? "PUT" : "DELETE" }),
-  videos: (category: Category, offset: number, limit = 20, tag: number | null = null) =>
-    request<Page>(`/api/v1/videos?${q({ category, offset, limit, sort: "newest", tag })}`),
+  videos: (category: Category, offset: number, limit = 20, tag: number | null = null, filters: VideoFilters = {}) =>
+    request<Page>(`/api/v1/videos?${q({ category, offset, limit, sort: filters.sort ?? "newest", tag,
+      seed: filters.sort === "random" ? filters.seed : undefined, unwatched: filters.unwatched ? "true" : undefined,
+      min_seconds: filters.min_seconds, max_seconds: filters.max_seconds })}`),
   tags: () => request<{ items: Tag[] }>("/api/v1/tags"),
   createTag: (name: string) => request<Tag>("/api/v1/tags", json("POST", { name })),
   mediaTags: (id: string) => request<{ ids: number[] }>(`/api/v1/media/${id}/tags`),

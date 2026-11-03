@@ -28,6 +28,7 @@ from ppvio.infrastructure.sqlite_library import PlayerLibraryRepositoryMixin
 from ppvio.infrastructure.sqlite_media_deletions import MEDIA_ACTIVE_CASE, PlayerMediaDeletionRepositoryMixin
 from ppvio.infrastructure.sqlite_read_mode import PlayerReadModeRepositoryMixin
 from ppvio.infrastructure.sqlite_tags import PlayerTagRepositoryMixin
+from ppvio.infrastructure.sqlite_bookmarks import PlayerBookmarkRepositoryMixin
 from ppvio.infrastructure.sqlite_watched import PlayerWatchedRepositoryMixin
 from ppvio.infrastructure.video_query import build_video_count, build_video_query
 
@@ -40,6 +41,7 @@ _DATE_GROUP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 class PlayerCatalogRepositorySQLite(
     PlayerMediaWorkRepositoryMixin,
     PlayerTagRepositoryMixin,
+    PlayerBookmarkRepositoryMixin,
     PlayerWatchedRepositoryMixin,
     PlayerDuplicateCopyRepositoryMixin,
     PlayerDuplicateReviewRepositoryMixin,
@@ -715,6 +717,7 @@ class PlayerCatalogRepositorySQLite(
             if removed:
                 conn.execute("UPDATE media SET active=0 WHERE media_id=?", (media_id,))
                 conn.execute("DELETE FROM favorites WHERE media_id=?", (media_id,))
+                conn.execute("DELETE FROM player_bookmarks WHERE media_id=?", (media_id,))
                 conn.execute(
                     "DELETE FROM player_long_video_progress WHERE media_id=?",
                     (media_id,),

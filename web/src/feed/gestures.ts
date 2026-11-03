@@ -54,6 +54,8 @@ export class GestureRecognizer {
   }
 
   cancel(): void {
+    if (this.pendingTap) clearTimeout(this.pendingTap);
+    this.pendingTap = null; this.lastTapAt = -Infinity;
     if (this.longPressing) this.emit("long-press-end", this.downX);
     this.pressing = false; this.longPressing = false;
     this.clearLong();

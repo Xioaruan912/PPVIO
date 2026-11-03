@@ -27,10 +27,10 @@ export function Favorites({ onOpen }: { onOpen: Open }) {
           ))}
         </div>
       )}
-      {pages.error && !pages.items.length ? <Empty>加载失败，稍后再试</Empty>
+      {pages.error && !pages.items.length ? <Empty><button type="button" onClick={() => void pages.retry()}>加载失败，点击重试</button></Empty>
         : pages.done && !pages.items.length ? <Empty>这里还是空的。刷视频时双击就能收藏。</Empty> : (
-        <Grid items={pages.items} done={pages.done} onEnd={() => void pages.more()}
-          onOpen={index => onOpen(pages.items, index, () => void pages.more())} />
+        <Grid items={pages.items} done={pages.done} error={pages.error} onRetry={() => void pages.retry()} onEnd={() => void pages.more()}
+          onOpen={(index, at) => onOpen(pages.items, index, () => void pages.more(), at)} />
       )}
     </main>
   );

@@ -8,6 +8,11 @@ import { GestureRecognizer } from "./gestures";
 import { MediaActions } from "./MediaActions";
 import { useFeedPlayback, type BufferReadiness } from "./useFeedPlayback";
 import { LoadingFeedback } from "../ui/LoadingFeedback";
+import { SeekBar } from "../ui/SeekBar";
+import { SeekPreview } from "../ui/SeekPreview";
+import { BookmarkButton } from "../ui/Bookmarks";
+import { useHorizontalSeek } from "../player/useHorizontalSeek";
+import { usePlaybackRecovery, RecoveryNotice } from "../player/usePlaybackRecovery";
 
 interface Props {
   media: Media;
@@ -22,22 +27,22 @@ interface Props {
   onRemove?: (media: Media) => void;
   /** 整理模式 buttons sit at the bottom; the rail moves up out of their way. */
   raised?: boolean;
+  startAt?: number;
 }
 
 interface Burst { id: number; x: number; y: number }
 
-export function FeedItem({ media, active, mounted, eager = false, onBufferReadiness, onFavorite, onRemove, raised = false }: Props) {
+export function FeedItem({ media, active, mounted, eager = false, onBufferReadiness, onFavorite, onRemove, raised = false, startAt }: Props) {
   const prefs = usePrefs();
   const locked = useLocked();
   const [menu, setMenu] = useState(false);
   const video = useRef<HTMLVideoElement>(null);
-  const bar = useRef<HTMLDivElement>(null);
+  const startedAt = useRef(false);
   const [paused, setPaused] = useState(false);
   const [fast, setFast] = useState(false);
   const [failed, setFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [bursts, setBursts] = useState<Burst[]>([]);
-  const [seeking, setSeeking] = useState(false);
   const recognizer = useRef<GestureRecognizer | null>(null);
   const lastY = useRef(0);
   const landscape = (media.width ?? 9) > (media.height ?? 16);
@@ -47,6 +52,10 @@ export function FeedItem({ media, active, mounted, eager = false, onBufferReadin
   const { attachVideo, visible } = useFeedPlayback(video, {
     media, src, active, mounted, eager, paused, locked, onPause, onBufferReadiness,
   });
+
+  const enabled = active && mounted && !locked && visible;
+  const horizontal = useHorizontalSeek(video, src, enabled);
+  const recovery = usePlaybackRecovery(video, src, enabled);
 
   // Play only the clip on screen; a clip that leaves the screen starts over next time.
   useEffect(() => {
@@ -71,19 +80,6 @@ export function FeedItem({ media, active, mounted, eager = false, onBufferReadin
     return () => window.removeEventListener("keydown", onKey);
   }, [active, menu, prefs.muted]);
 
-  // The progress line follows the playhead every frame while this clip is on screen.
-  useEffect(() => {
-    if (!active) return;
-    let frame = 0;
-    const tick = () => {
-      const el = video.current;
-      if (el && bar.current && el.duration > 0) bar.current.style.transform = `scaleX(${el.currentTime / el.duration})`;
-      frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [active]);
-
   const favorite = (on: boolean) => {
     if (media.favorite === on) return;
     onFavorite(media.id, on);
@@ -105,14 +101,6 @@ export function FeedItem({ media, active, mounted, eager = false, onBufferReadin
     return () => g.dispose();
   }, [media.id, media.favorite]);
 
-  const seekTo = (clientX: number) => {
-    const el = video.current;
-    const track = bar.current?.parentElement;
-    if (!el || !track || !(el.duration > 0)) return;
-    const box = track.getBoundingClientRect();
-    el.currentTime = Math.min(1, Math.max(0, (clientX - box.left) / box.width)) * el.duration;
-  };
-
   return (
     <section className="relative h-dvh w-full snap-start snap-always overflow-hidden bg-black" aria-label="视频">
       {landscape && media.cover_url && (
@@ -121,6 +109,7 @@ export function FeedItem({ media, active, mounted, eager = false, onBufferReadin
       {mounted ? (
         <video ref={attachVideo} src={src} poster={media.cover_url ?? undefined} playsInline loop muted={prefs.muted}
           preload={!locked && visible && (active || eager) ? "auto" : "metadata"}
+          onLoadedMetadata={event => { if (!startedAt.current && startAt !== undefined) { event.currentTarget.currentTime = Math.min(startAt, event.currentTarget.duration); startedAt.current = true; } }}
           onLoadStart={() => { setFailed(false); setLoading(true); }}
           onWaiting={event => { if (!event.currentTarget.paused) setLoading(true); }}
           onSeeking={event => { if (!event.currentTarget.paused) setLoading(true); }}
@@ -135,10 +124,10 @@ export function FeedItem({ media, active, mounted, eager = false, onBufferReadin
 
       {/* The gesture surface: everything except the rail and the progress line. */}
       <div className="absolute inset-0 touch-pan-y select-none"
-        onPointerDown={event => { lastY.current = event.clientY; recognizer.current?.down(event.clientX, event.clientY, performance.now()); }}
-        onPointerMove={event => recognizer.current?.move(event.clientX, event.clientY)}
-        onPointerUp={event => recognizer.current?.up(event.clientX, performance.now())}
-        onPointerCancel={() => recognizer.current?.cancel()}
+        onPointerDown={event => { lastY.current = event.clientY; horizontal.down(event.clientX, event.clientY); recognizer.current?.down(event.clientX, event.clientY, performance.now()); }}
+        onPointerMove={event => { if (horizontal.move(event.clientX, event.clientY)) { event.currentTarget.setPointerCapture?.(event.pointerId); recognizer.current?.cancel(); } else recognizer.current?.move(event.clientX, event.clientY); }}
+        onPointerUp={event => { if (horizontal.up(event.clientX, event.clientY)) recognizer.current?.cancel(); else recognizer.current?.up(event.clientX, performance.now()); }}
+        onPointerCancel={() => { horizontal.cancel(); recognizer.current?.cancel(); }}
         onContextMenu={event => event.preventDefault()} />
 
       <LoadingFeedback video={video} source={src} waiting={loading}
@@ -164,9 +153,8 @@ export function FeedItem({ media, active, mounted, eager = false, onBufferReadin
         ))}
       </AnimatePresence>
 
-      {failed && active && (
-        <p className="pointer-events-none absolute inset-x-0 top-1/2 text-center text-[14px] text-muted">播放失败，上滑看下一条</p>
-      )}
+      {enabled && <RecoveryNotice {...recovery} compatible={hasLow && !prefs.lowRes ? () => setPref("lowRes", true) : undefined} />}
+      {enabled && horizontal.target !== null && <div className="pointer-events-none absolute inset-x-0 bottom-40"><SeekPreview id={media.id} time={horizontal.target} enabled /></div>}
 
       <div className={`absolute right-3 flex flex-col items-center gap-5 transition-[bottom] ${raised ? "bottom-[calc(9.5rem+env(safe-area-inset-bottom))]" : "bottom-[calc(5.5rem+env(safe-area-inset-bottom))]"}`}>
         <RailButton label={media.favorite ? "取消收藏" : "收藏"} onClick={() => favorite(!media.favorite)}>
@@ -175,6 +163,7 @@ export function FeedItem({ media, active, mounted, eager = false, onBufferReadin
         <RailButton label={prefs.muted ? "打开声音" : "静音"} onClick={() => setPref("muted", !prefs.muted)}>
           {prefs.muted ? <SpeakerSlashIcon size={28} weight="fill" /> : <SpeakerHighIcon size={28} weight="fill" />}
         </RailButton>
+        <BookmarkButton media={media} video={video} enabled={enabled} />
         <RailButton label="更多" onClick={() => setMenu(true)}><DotsThreeIcon size={30} weight="bold" /></RailButton>
         {hasLow && (
           <button type="button" onClick={() => setPref("lowRes", !prefs.lowRes)} aria-label="切换清晰度"
@@ -186,14 +175,8 @@ export function FeedItem({ media, active, mounted, eager = false, onBufferReadin
 
       <MediaActions media={media} open={menu} onClose={() => setMenu(false)} onRemove={onRemove} />
 
-      {/* Thin progress line; pressing it widens it and seeks. */}
-      <div className={`absolute inset-x-0 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] flex items-end px-3 ${seeking ? "h-6" : "h-4"}`}
-        onPointerDown={event => { event.currentTarget.setPointerCapture(event.pointerId); setSeeking(true); seekTo(event.clientX); }}
-        onPointerMove={event => { if (seeking) seekTo(event.clientX); }}
-        onPointerUp={() => setSeeking(false)} onPointerCancel={() => setSeeking(false)}>
-        <div className={`w-full overflow-hidden rounded-full bg-white/20 transition-[height] ${seeking ? "h-1.5" : "h-[3px]"}`}>
-          <div ref={bar} className="h-full origin-left bg-white" style={{ transform: "scaleX(0)" }} />
-        </div>
+      <div className="absolute inset-x-0 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] px-3">
+        <SeekBar video={video} source={src} mediaId={media.id} enabled={enabled} duration={media.duration_seconds ?? 0} />
       </div>
     </section>
   );
