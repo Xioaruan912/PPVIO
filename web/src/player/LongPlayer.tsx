@@ -1,5 +1,5 @@
 import {
-  ArrowClockwiseIcon, ArrowCounterClockwiseIcon, CaretLeftIcon, CircleNotchIcon, CornersOutIcon, DotsThreeIcon, HeartIcon,
+  ArrowClockwiseIcon, ArrowCounterClockwiseIcon, CaretLeftIcon, CornersOutIcon, DotsThreeIcon, HeartIcon,
   PauseIcon, PictureInPictureIcon, PlayIcon, SpeakerHighIcon, SpeakerSlashIcon,
 } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
@@ -11,6 +11,7 @@ import { setPref, usePrefs } from "../prefs";
 import { announce, Cover, formatDuration } from "../ui/Grid";
 import { setLongPlayback, useLocked } from "../ui/privacy";
 import { toast } from "../ui/toast";
+import { LoadingFeedback } from "../ui/LoadingFeedback";
 
 const SPEEDS = [1, 1.25, 1.5, 2];
 const SAVE_EVERY_MS = 10_000;
@@ -209,9 +210,14 @@ export function LongPlayer({ media, next, onClose, onNext }: {
           event.currentTarget.playbackRate = speed;
         }}
         onError={() => { setFailed(true); setLoading(false); }}
-        onLoadStart={() => setLoading(true)} onWaiting={() => setLoading(true)} onCanPlay={() => setLoading(false)}
+        onLoadStart={() => { setFailed(false); setLoading(true); }}
+        onWaiting={event => { if (!event.currentTarget.paused) setLoading(true); }}
+        onSeeking={event => { if (!event.currentTarget.paused) setLoading(true); }}
+        onSeeked={event => setLoading(!event.currentTarget.paused && event.currentTarget.readyState < 3)}
+        onCanPlay={() => setLoading(false)}
         onPlaying={() => { setFailed(false); setLoading(false); }}
-        onPlay={() => { setPlaying(true); setCountdown(null); }} onPause={() => { setPlaying(false); setControls(true); }}
+        onPlay={event => { setPlaying(true); setCountdown(null); setLoading(event.currentTarget.readyState < 3); }}
+        onPause={() => { setPlaying(false); setControls(true); setLoading(false); }}
         onEnded={() => { if (next && onNext) setCountdown(NEXT_IN_SECONDS); }}
         onProgress={event => setBuffered(bufferedEnd(event.currentTarget))}
         onTimeUpdate={event => { setTime(event.currentTarget.currentTime); setBuffered(bufferedEnd(event.currentTarget)); }} />
@@ -223,9 +229,7 @@ export function LongPlayer({ media, next, onClose, onNext }: {
         onPointerCancel={() => gestures.current?.cancel()}
         onContextMenu={event => event.preventDefault()} />
 
-      {loading && !failed && (
-        <CircleNotchIcon size={44} className="pointer-events-none absolute left-1/2 top-1/2 -ml-[22px] -mt-[22px] animate-spin text-white/80" aria-label="正在缓冲" />
-      )}
+      <LoadingFeedback video={video} source={src} waiting={loading} enabled={!locked && !failed} />
       {failed && (
         <div className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 px-6 text-center text-[14px] text-white/80">
           <p>这个视频在当前浏览器放不了</p>

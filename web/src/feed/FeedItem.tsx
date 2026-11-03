@@ -7,6 +7,7 @@ import { useLocked } from "../ui/privacy";
 import { GestureRecognizer } from "./gestures";
 import { MediaActions } from "./MediaActions";
 import { useFeedPlayback, type BufferReadiness } from "./useFeedPlayback";
+import { LoadingFeedback } from "../ui/LoadingFeedback";
 
 interface Props {
   media: Media;
@@ -34,6 +35,7 @@ export function FeedItem({ media, active, mounted, eager = false, onBufferReadin
   const [paused, setPaused] = useState(false);
   const [fast, setFast] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [bursts, setBursts] = useState<Burst[]>([]);
   const [seeking, setSeeking] = useState(false);
   const recognizer = useRef<GestureRecognizer | null>(null);
@@ -119,7 +121,13 @@ export function FeedItem({ media, active, mounted, eager = false, onBufferReadin
       {mounted ? (
         <video ref={attachVideo} src={src} poster={media.cover_url ?? undefined} playsInline loop muted={prefs.muted}
           preload={!locked && visible && (active || eager) ? "auto" : "metadata"}
-          onError={() => setFailed(true)} onPlaying={() => setFailed(false)}
+          onLoadStart={() => { setFailed(false); setLoading(true); }}
+          onWaiting={event => { if (!event.currentTarget.paused) setLoading(true); }}
+          onSeeking={event => { if (!event.currentTarget.paused) setLoading(true); }}
+          onCanPlay={() => setLoading(false)} onSeeked={event => setLoading(!event.currentTarget.paused && event.currentTarget.readyState < 3)}
+          onPlay={event => setLoading(event.currentTarget.readyState < 3)} onPause={() => setLoading(false)}
+          onError={() => { setFailed(true); setLoading(false); }}
+          onPlaying={() => { setFailed(false); setLoading(false); }}
           className={`absolute inset-0 size-full ${landscape ? "object-contain" : "object-cover"}`} />
       ) : media.cover_url ? (
         <img src={media.cover_url} alt="" className={`absolute inset-0 size-full ${landscape ? "object-contain" : "object-cover"}`} />
@@ -132,6 +140,9 @@ export function FeedItem({ media, active, mounted, eager = false, onBufferReadin
         onPointerUp={event => recognizer.current?.up(event.clientX, performance.now())}
         onPointerCancel={() => recognizer.current?.cancel()}
         onContextMenu={event => event.preventDefault()} />
+
+      <LoadingFeedback video={video} source={src} waiting={loading}
+        enabled={active && mounted && !paused && !locked && visible && !failed} />
 
       <AnimatePresence>
         {paused && active && (
