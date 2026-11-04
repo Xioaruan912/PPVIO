@@ -64,7 +64,6 @@ export function LongPlayer({ media, next, onClose, onNext, startAt, continueNext
   const [duration, setDuration] = useState(media.duration_seconds ?? 0);
   const [speed, setSpeed] = useState(1);
   const [fast, setFast] = useState(false);
-  const [muted, setMuted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [jump, setJump] = useState<"back" | "forward" | null>(null);
   const [failed, setFailed] = useState(false);
@@ -132,7 +131,7 @@ export function LongPlayer({ media, next, onClose, onNext, startAt, continueNext
     setTimeout(() => setJump(null), 500);
   };
   const toggle = () => { const el = video.current; if (el) void (el.paused ? el.play() : el.pause()); };
-  const toggleMute = () => { const el = video.current; if (el) { el.muted = !el.muted; setMuted(el.muted); } };
+  const toggleMute = () => setPref("muted", !prefs.muted);
   const remove = async () => {
     try { await api.remove(media.id); } catch { toast("删除失败，请稍后再试"); return; }
     announce({ id: media.id, removed: true });
@@ -207,7 +206,7 @@ export function LongPlayer({ media, next, onClose, onNext, startAt, continueNext
 
   return (
     <div ref={root} className="fixed inset-0 z-30 bg-black">
-      <video ref={video} src={src} playsInline autoPlay className="size-full object-contain"
+      <video ref={video} src={src} playsInline autoPlay muted={prefs.muted} className="size-full object-contain"
         onLoadedMetadata={event => {
           setDuration(event.currentTarget.duration);
           if (resume.current) { event.currentTarget.currentTime = resume.current; resume.current = 0; }
@@ -267,8 +266,8 @@ export function LongPlayer({ media, next, onClose, onNext, startAt, continueNext
                 <button type="button" onClick={() => jumpBy(true)} aria-label="前进 10 秒" className="hidden size-10 place-items-center sm:grid"><ArrowClockwiseIcon size={22} /></button>
                 <span className="ml-1 whitespace-nowrap text-[13px] tabular-nums text-white/85">{formatDuration(time) || "0:00"} / {formatDuration(duration)}</span>
                 <span className="flex-1" />
-                <button type="button" onClick={toggleMute} aria-label={muted ? "打开声音" : "静音"} className="grid size-10 place-items-center">
-                  {muted ? <SpeakerSlashIcon size={22} /> : <SpeakerHighIcon size={22} />}
+                <button type="button" onClick={toggleMute} aria-label={prefs.muted ? "打开声音" : "静音"} className="grid size-10 place-items-center">
+                  {prefs.muted ? <SpeakerSlashIcon size={22} /> : <SpeakerHighIcon size={22} />}
                 </button>
                 <button type="button" className="rounded-full bg-white/15 px-2.5 py-1 text-[13px] font-semibold"
                   onClick={() => { const next = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; setSpeed(next); if (video.current) video.current.playbackRate = next; }}>

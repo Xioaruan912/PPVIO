@@ -13,7 +13,8 @@ export interface Prefs {
 const KEY = "tgvio-web:prefs";
 // Low-res first by default: it caches and starts faster, which is how the owner watches.
 const DEFAULTS: Prefs = { lowRes: true, muted: true, coverBlur: true, privacyLock: true };
-let current: Prefs = { ...DEFAULTS, ...safeParse(localStorage.getItem(KEY)) };
+// Sound is opt-in for each page visit; other playback preferences remain durable.
+let current: Prefs = { ...DEFAULTS, ...safeParse(localStorage.getItem(KEY)), muted: true };
 const listeners = new Set<() => void>();
 
 function safeParse(text: string | null): Partial<Prefs> {

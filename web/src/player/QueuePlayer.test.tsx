@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { api, type Media } from "../api";
 import { QueuePlayer } from "./QueuePlayer";
+import { setPref } from "../prefs";
 const media = (id: string, category = "short") => ({ id, category, stream_url: `/${id}.mp4`, cover_url: null, width: 360, height: 640, duration_seconds: 60, size_bytes: 100, variants: [], favorite: false, deletable: false }) as Media;
 let root: ReturnType<typeof createRoot>, box: HTMLDivElement;
 beforeEach(() => {
@@ -24,4 +25,15 @@ it("advances a long video to retry and skip when the next queue item is unavaila
  expect(box.querySelector("video")).toBeNull();
  expect(box.textContent).toContain("待播 2/3");
  expect(box.textContent).toContain("这个视频暂时无法播放");
+});
+
+it("starts long videos muted and lets the user enable sound", async () => {
+  setPref("muted", true);
+  vi.spyOn(api, "media").mockResolvedValue(media("long", "long"));
+  vi.spyOn(api, "longProgress").mockResolvedValue({ items: [], recent_items: [] });
+  await act(async () => root.render(<QueuePlayer ids={["long"]} start={0} onClose={() => {}} />));
+  expect(box.querySelector("video")!.muted).toBe(true);
+  await act(async () => box.querySelector<HTMLButtonElement>('[aria-label="打开声音"]')!.click());
+  expect(box.querySelector("video")!.muted).toBe(false);
+  setPref("muted", true);
 });
