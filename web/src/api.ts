@@ -5,6 +5,7 @@ export class Unauthorized extends Error {}
 export interface Variant { id: string; height: number | null; label: string | null; stream_url: string }
 
 export interface Media {
+  premium?: boolean;
   /** View-only bookmark interval; never substitutes the server's opaque media ID. */
   clip?: { key: string; start: number; end?: number | null };
   organized?: boolean;
@@ -59,6 +60,7 @@ const q = (params: Record<string, string | number | null | undefined>) =>
 const json = (method: string, body?: unknown): RequestInit => ({ method, body: body === undefined ? undefined : JSON.stringify(body) });
 
 export const api = {
+  media: (id: string, signal?: AbortSignal) => request<Media>(`/api/v1/media/${id}`, { signal }),
   login: (secret: string) => request<{ authenticated: boolean }>("/api/v1/auth/login", json("POST", { secret })),
   logout: () => request<{ authenticated: boolean }>("/api/v1/auth/logout", json("POST")),
   feed: (limit = 6, signal?: AbortSignal) => request<{ items: Media[] }>(`/api/v1/feed?limit=${limit}`, { signal }),
@@ -67,10 +69,10 @@ export const api = {
     request<Page>(`/api/v1/videos?${q({ category, offset, limit, sort: filters.sort ?? "newest", tag,
       seed: filters.sort === "random" ? filters.seed : undefined, unwatched: filters.unwatched ? "true" : undefined,
       min_seconds: filters.min_seconds, max_seconds: filters.max_seconds })}`),
-  tags: () => request<{ items: Tag[] }>("/api/v1/tags"),
+  tags: (signal?: AbortSignal) => request<{ items: Tag[] }>("/api/v1/tags", { signal }),
   createTag: (name: string) => request<Tag>("/api/v1/tags", json("POST", { name })),
-  mediaTags: (id: string) => request<{ ids: number[] }>(`/api/v1/media/${id}/tags`),
-  setMediaTag: (id: string, tag: number, on: boolean) => request<{ ids: number[] }>(`/api/v1/media/${id}/tags/${tag}`, json(on ? "PUT" : "DELETE")),
+  mediaTags: (id: string, signal?: AbortSignal) => request<{ ids: number[] }>(`/api/v1/media/${id}/tags`, { signal }),
+  setMediaTag: (id: string, tag: number, on: boolean, signal?: AbortSignal) => request<{ ids: number[]; filing?: { status: string } | null }>(`/api/v1/media/${id}/tags/${tag}`, { ...json(on ? "PUT" : "DELETE"), signal }).then(value => { window.dispatchEvent(new Event("ppvio:tags-changed")); return value; }),
   createCollection: (name: string) => request<Collection>("/api/v1/collections", json("POST", { name, kind: "manual" })),
   addToCollection: (collection: string, id: string) =>
     request<unknown>(`/api/v1/collections/${encodeURIComponent(collection)}/items/${id}`, json("PUT")),

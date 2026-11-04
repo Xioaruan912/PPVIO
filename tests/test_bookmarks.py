@@ -65,7 +65,7 @@ class BookmarkTests(unittest.IsolatedAsyncioTestCase):
     async def test_bookmarks_are_durable_idempotent_at_a_tenth_and_ordered_by_position(self) -> None:
         status, saved = await self.add(position=12.34, name="  scene  ")
         self.assertEqual(status, 201)
-        self.assertEqual(set(saved), {"id", "media_id", "position_seconds", "name", "created_at", "end_seconds"})
+        self.assertEqual(set(saved), {"id", "media_id", "position_seconds", "name", "created_at", "end_seconds", "tag_ids"})
         self.assertRegex(saved["id"], r"^[0-9a-f]{32}$")
         self.assertEqual((saved["media_id"], saved["position_seconds"], saved["name"]), (A, 12.3, "scene"))
         self.assertEqual((await self.add(position=12.349, name="replacement"))[1], saved)

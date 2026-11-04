@@ -1,10 +1,15 @@
-import { GearSixIcon, HeartIcon, PlayIcon, SquaresFourIcon } from "@phosphor-icons/react";
+import { GearSixIcon, TagIcon, PlayIcon, SquaresFourIcon } from "@phosphor-icons/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Media, LibraryFolder } from "./api";
 import { ClipList, Feed } from "./feed/Feed";
 import { Login } from "./Login";
 import { Duplicates } from "./pages/Duplicates";
-import { Favorites } from "./pages/Favorites";
+import { TagCollections } from "./pages/TagCollections";
+import { History } from "./pages/History";
+import { Channels } from "./pages/Channels";
+import { TagManager } from "./pages/TagManager";
+import { Queue } from "./pages/Queue";
+import { QueuePlayer } from "./player/QueuePlayer";
 import { Library } from "./pages/Library";
 import { LongPlayer } from "./player/LongPlayer";
 import { Settings } from "./Settings";
@@ -14,9 +19,10 @@ import { BookmarkWall } from "./ui/Bookmarks";
 import { useRouteState } from "./ui/navigation";
 import { Curation } from "./pages/Curation";
 import { BookmarkLoopFeed } from "./pages/BookmarkLoopFeed";
+import { TagFilingNotice } from "./ui/TagFilingNotice";
 
 type Tab = "feed" | "library" | "favorites" | "settings";
-type Overlay = { kind: "clips"; items: Media[]; index: number; at?: number } | { kind: "long"; items: Media[]; index: number; at?: number } | { kind: "duplicates" } | { kind: "bookmarks" } | { kind: "curation" } | { kind: "loops" } | null;
+type Overlay = { kind: "clips"; items: Media[]; index: number; at?: number } | { kind: "long"; items: Media[]; index: number; at?: number } | { kind: "duplicates" } | { kind: "bookmarks" } | { kind: "curation" } | { kind: "loops"; tagId?: number } | { kind: "history" | "channels" | "premium" | "tags" | "queue" } | { kind: "queue-player"; ids: string[]; index: number } | null;
 
 /**
  * A short clip opens the swipe list of the short clips around it; a long one opens the film player,
@@ -51,8 +57,11 @@ export function App() {
   }, [tab]);
   const [closed, setClosed] = useState(0);
   const previousOverlay = useRef(overlay);
+  useEffect(() => { const changed = () => setClosed(value => value + 1); window.addEventListener("ppvio:tags-changed", changed); return () => window.removeEventListener("ppvio:tags-changed", changed); }, []);
   useEffect(() => { if (previousOverlay.current && !overlay) setClosed(n => n + 1); previousOverlay.current = overlay; }, [overlay]);
   const close = () => back();
+  const show = (kind: "history" | "channels" | "premium" | "tags" | "queue") => navigate({ ...route, overlay: { kind } });
+  const playQueue = (ids: string[], index: number) => navigate({ ...route, overlay: { kind: "queue-player", ids, index } });
   const onUnauthorized = useCallback(() => setAuthed(false), []);
   const open = (items: Media[], index: number, _more?: () => void, at?: number) => {
     const picked = overlayFor(items, index);
@@ -63,8 +72,8 @@ export function App() {
   return (
     <>
       <div hidden={tab !== "feed" || !!overlay}><Feed onUnauthorized={onUnauthorized} enabled={tab === "feed" && !overlay} /></div>
-      {libraryOpened && <div hidden={tab !== "library"}><Library selectedFolder={route.folder} onFolderChange={folder => navigate({ ...route, folder })} onOpen={open} refresh={closed} onBookmarks={() => navigate({ ...route, tab, overlay: { kind: "bookmarks" } })} onCuration={() => navigate({ ...route, tab, overlay: { kind: "curation" } })} /></div>}
-      {favoritesOpened && <div hidden={tab !== "favorites"}><Favorites onOpen={open} /></div>}
+      {libraryOpened && <div hidden={tab !== "library"}><Library selectedFolder={route.folder} onFolderChange={folder => navigate({ ...route, folder })} onOpen={open} refresh={closed} onBookmarks={() => navigate({ ...route, tab, overlay: { kind: "bookmarks" } })} onCuration={() => navigate({ ...route, tab, overlay: { kind: "curation" } })} onHistory={() => show("history")} onChannels={() => show("channels")} onPremium={() => show("premium")} onQueue={() => show("queue")} /></div>}
+      {favoritesOpened && <div hidden={tab !== "favorites"}><TagCollections onOpen={open} onManage={() => show("tags")} refresh={closed} notice={tab === "favorites" && !overlay ? <TagFilingNotice /> : undefined} /></div>}
       {tab === "settings" && <Settings onLoggedOut={onUnauthorized} onDuplicates={() => navigate({ ...route, tab, overlay: { kind: "duplicates" } })} />}
 
       {overlay?.kind === "clips" && <OverlayClips items={overlay.items} start={overlay.index} onClose={close} at={overlay.at} />}
@@ -74,15 +83,21 @@ export function App() {
       )}
       {overlay?.kind === "duplicates" && <Duplicates onClose={close} />}
 
-      {overlay?.kind === "bookmarks" && <div className="fixed inset-0 z-30 overflow-y-auto bg-bg"><BookmarkWall onBack={close} onOpen={(media, at) => open([media], 0, undefined, at)} onLoop={() => navigate({ ...route, overlay: { kind: "loops" } })} /></div>}
-      {overlay?.kind === "loops" && <BookmarkLoopFeed onClose={close} />}
+      {overlay?.kind === "bookmarks" && <div className="fixed inset-0 z-30 overflow-y-auto bg-bg"><BookmarkWall onBack={close} onOpen={(media, at) => open([media], 0, undefined, at)} onLoop={tagId => navigate({ ...route, overlay: { kind: "loops", tagId } })} /></div>}
+      {overlay?.kind === "loops" && <BookmarkLoopFeed onClose={close} tagId={overlay.tagId} />}
       {overlay?.kind === "curation" && <div className="fixed inset-0 z-30 overflow-y-auto bg-bg"><Curation onBack={close} onOpen={open} /></div>}
+
+      {overlay?.kind === "history" && <div className="fixed inset-0 z-30 overflow-y-auto bg-bg"><History onBack={close} onOpen={open} /></div>}
+      {(overlay?.kind === "channels" || overlay?.kind === "premium") && <div className="fixed inset-0 z-30 overflow-y-auto bg-bg"><Channels onBack={close} onOpen={open} premiumOnly={overlay.kind === "premium"} onPlayQueue={items => playQueue(items.map(item => item.id), 0)} /></div>}
+      {overlay?.kind === "tags" && <div className="fixed inset-0 z-30 overflow-y-auto bg-bg"><TagManager onBack={close} /></div>}
+      {overlay?.kind === "queue" && <div className="fixed inset-0 z-30 overflow-y-auto bg-bg"><Queue onBack={close} onPlay={playQueue} /></div>}
+      {overlay?.kind === "queue-player" && <QueuePlayer ids={overlay.ids} start={overlay.index} onClose={close} />}
 
       {!overlay && (
         <nav className={`fixed inset-x-0 bottom-0 z-10 flex justify-around px-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-6 ${tab === "feed" ? "bg-gradient-to-t from-black/80 to-transparent" : "border-t border-line bg-bg/90 pt-2 backdrop-blur-md"}`} aria-label="导航">
           <NavItem label="刷" active={tab === "feed"} onClick={() => setTab("feed")}><PlayIcon size={22} weight={tab === "feed" ? "fill" : "regular"} /></NavItem>
           <NavItem label="片库" active={tab === "library"} onClick={() => setTab("library")}><SquaresFourIcon size={22} weight={tab === "library" ? "fill" : "regular"} /></NavItem>
-          <NavItem label="收藏" active={tab === "favorites"} onClick={() => setTab("favorites")}><HeartIcon size={22} weight={tab === "favorites" ? "fill" : "regular"} /></NavItem>
+          <NavItem label="标签" active={tab === "favorites"} onClick={() => setTab("favorites")}><TagIcon size={22} weight={tab === "favorites" ? "fill" : "regular"} /></NavItem>
           <NavItem label="设置" active={tab === "settings"} onClick={() => setTab("settings")}><GearSixIcon size={22} weight={tab === "settings" ? "fill" : "regular"} /></NavItem>
         </nav>
       )}

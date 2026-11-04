@@ -59,6 +59,13 @@ class PlayerBookmarkRepositoryMixin:
             duration = row["duration_seconds"]
             if end is not None and isinstance(duration, (int, float)) and math.isfinite(duration) and duration > 0 and max(end, raw_end) > duration:
                 raise InvalidBookmark("bookmark end exceeds video duration")
+            if "tag_ids" in changes:
+                tags = changes["tag_ids"]
+                if (not isinstance(tags, list) or len(tags) > 20 or any(type(tag) is not int or not 0 < tag < 2**63 for tag in tags)
+                        or len(set(tags)) != len(tags) or any(conn.execute("SELECT 1 FROM player_tags WHERE tag_id=?", (tag,)).fetchone() is None for tag in tags)):
+                    raise InvalidBookmark("invalid bookmark tags")
+                conn.execute("DELETE FROM player_bookmark_tags WHERE bookmark_id=?", (bookmark_id,))
+                conn.executemany("INSERT INTO player_bookmark_tags(bookmark_id,tag_id) VALUES(?,?)", [(bookmark_id, tag) for tag in tags])
             conn.execute("UPDATE player_bookmarks SET name=?,end_ticks=? WHERE bookmark_id=? AND media_id=?", (name, None if end is None else position_ticks(end), bookmark_id, media_id))
             return PlayerBookmark(current.id, media_id, current.position_seconds, name, current.created_at, end)
 
@@ -78,15 +85,16 @@ class PlayerBookmarkRepositoryMixin:
         ).fetchall()
         return [_bookmark(row) for row in rows]
 
-    async def list_bookmark_page(self, *, offset: int = 0, limit: int = 20) -> list[PlayerBookmark]:
+    async def list_bookmark_page(self, *, offset: int = 0, limit: int = 20, tag_id: int | None = None) -> list[PlayerBookmark]:
         if not 0 <= offset <= MAX_BOOKMARKS or not 1 <= limit <= 101:
             raise InvalidBookmark("invalid bookmark paging")
         rows = self._require().execute(
             """SELECT bookmark.* FROM player_bookmarks bookmark
                JOIN media ON media.media_id=bookmark.media_id
                WHERE media.active=1 AND media.kind='video'
+               AND (? IS NULL OR EXISTS(SELECT 1 FROM player_bookmark_tags t WHERE t.bookmark_id=bookmark.bookmark_id AND t.tag_id=?))
                ORDER BY bookmark.created_at DESC, bookmark.bookmark_id LIMIT ? OFFSET ?""",
-            (limit, offset),
+            (tag_id, tag_id, limit, offset),
         ).fetchall()
         return [_bookmark(row) for row in rows]
 

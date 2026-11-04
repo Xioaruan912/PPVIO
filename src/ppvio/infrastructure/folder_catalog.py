@@ -92,6 +92,14 @@ class LibraryCatalogSource:
                 continue
             if any(entry.is_collection and _DATE_FOLDER.fullmatch(entry.name) for entry in entries):
                 found = await self._packages[root].discover(recent_dates=recent_dates)
+                if recent_dates is None and any(entry.is_collection and entry.name == "标签收藏" for entry in entries):
+                    try:
+                        tagged_entries = await self._client.list_collection(f"{root}/标签收藏")
+                        tagged = await self._walk(f"{root}/标签收藏", tagged_entries)
+                        found = ArchiveDiscovery(packages=found.packages + tagged.packages,
+                                                 complete_scan=found.complete_scan and tagged.complete_scan)
+                    except Exception:
+                        found = ArchiveDiscovery(packages=found.packages, complete_scan=False)
             elif recent_dates is not None:
                 continue  # plain folders have no "newest dates"; the full scan covers them
             else:

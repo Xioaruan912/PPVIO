@@ -495,7 +495,7 @@ class PlayerRecoveryTests(unittest.IsolatedAsyncioTestCase):
         await self.service.migrate_target(new_settings)
         copied = self.factory.clients[new_settings.endpoint_url]
         manifest = await EncryptedManifestStore(copied, self.cipher, "moved-root").load()
-        self.assertEqual(manifest["schema_version"], 4)
+        self.assertEqual(manifest["schema_version"], 5)
         self.assertEqual(
             [
                 (entry["name"], entry["kind"], entry["items"])

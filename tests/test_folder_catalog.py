@@ -58,6 +58,18 @@ class LibraryCatalogSourceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(found.complete_scan)
         self.assertNotIn("短视频/archive", dav.listed, "other folders beside packages are left alone")
 
+    async def test_archive_roots_also_scan_tag_filing_folders(self) -> None:
+        dav = Dav({
+            "短视频": (Entry("2026-09-22", True), Entry("标签收藏", True)),
+            "短视频/2026-09-22": (),
+            "短视频/标签收藏": (Entry("Tag--1", True),),
+            "短视频/标签收藏/Tag--1": (Entry("clip.mp4", False, '"a"', 900),),
+        })
+        found = await LibraryCatalogSource(dav, roots=("短视频",)).discover()
+        self.assertTrue(found.complete_scan)
+        self.assertEqual([p.remote_path for p in found.packages], ["短视频/标签收藏/Tag--1"])
+        self.assertEqual(found.packages[0].locations[0].remote_relpath, "clip.mp4")
+
     async def test_unset_unreadable_or_unsafe_views_never_count_as_complete(self) -> None:
         self.assertFalse((await LibraryCatalogSource(Dav({}), roots=()).discover()).complete_scan)
         self.assertFalse((await LibraryCatalogSource(Dav({}), roots=("missing",)).discover()).complete_scan)

@@ -23,6 +23,10 @@ from .diagnostics import (
 )
 from .library import PlayerLibraryHttpMixin
 from .media import PlayerMediaHttpMixin
+from .experience import PlayerExperienceHttpMixin
+from .manual_covers import PlayerManualCoverHttpMixin
+from .tag_filing import PlayerTagFilingHttpMixin
+from .tag_collections import PlayerTagCollectionHttpMixin
 from .streaming import PlayerHttpStreamingMixin
 from .storage_settings import PlayerStorageSettingsHttpMixin
 from .status import PlayerStatusHttpMixin
@@ -47,6 +51,7 @@ from ppvio.application.player_recovery import (
     WebDavBootstrap,
 )
 from ppvio.domain.auth import token_digest
+from ppvio.domain.manual_covers import MAX_MANUAL_COVER_BYTES
 from ppvio.domain.library_filters import (
     InvalidFilters,
     parse_filters,
@@ -97,7 +102,7 @@ _SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
 }
-class PlayerHttpServer(PlayerFeedPreferencesHttpMixin, PlayerCurationHttpMixin, PlayerPreviewHttpMixin, PlayerBookmarkHttpMixin, PlayerStatusHttpMixin, PlayerTagHttpMixin, PlayerDuplicateReviewHttpMixin, PlayerWatchedHttpMixin, PlayerHttpStreamingMixin, PlayerStorageSettingsHttpMixin, PlayerReadModeHttpMixin, PlayerLibraryHttpMixin, PlayerMediaHttpMixin):
+class PlayerHttpServer(PlayerTagCollectionHttpMixin, PlayerTagFilingHttpMixin, PlayerExperienceHttpMixin, PlayerManualCoverHttpMixin, PlayerFeedPreferencesHttpMixin, PlayerCurationHttpMixin, PlayerPreviewHttpMixin, PlayerBookmarkHttpMixin, PlayerStatusHttpMixin, PlayerTagHttpMixin, PlayerDuplicateReviewHttpMixin, PlayerWatchedHttpMixin, PlayerHttpStreamingMixin, PlayerStorageSettingsHttpMixin, PlayerReadModeHttpMixin, PlayerLibraryHttpMixin, PlayerMediaHttpMixin):
     """Small authenticated HTTP boundary around Player-only services.
 
     This adapter intentionally accepts only Player repository IDs. It has no
@@ -135,6 +140,8 @@ class PlayerHttpServer(PlayerFeedPreferencesHttpMixin, PlayerCurationHttpMixin, 
         list_folders: Callable[[str], Awaitable[list[str]]] | None = None,
         sync_status: object | None = None,
         previews: object | None = None,
+        tag_filing: object | None = None,
+        legacy_tag_groups: object | None = None,
     ) -> None:
         if min(
             max_streams, max_streams_per_client, max_header_size, stream_chunk_size, startup_range_bytes
@@ -171,6 +178,8 @@ class PlayerHttpServer(PlayerFeedPreferencesHttpMixin, PlayerCurationHttpMixin, 
         self._list_folders = list_folders
         self._sync_status = sync_status
         self._previews = previews
+        self._tag_filing = tag_filing
+        self._legacy_tag_groups = legacy_tag_groups
         self._storage_rate: dict[str, list[float]] = {}
         self._max_streams = max_streams
         self._stream_slots = asyncio.BoundedSemaphore(max_streams)
@@ -251,6 +260,10 @@ class PlayerHttpServer(PlayerFeedPreferencesHttpMixin, PlayerCurationHttpMixin, 
         self._register_curation_routes(app)
         self._register_feed_preference_routes(app)
         self._register_preview_routes(app)
+        self._register_experience_routes(app)
+        self._register_manual_cover_routes(app)
+        self._register_tag_filing_routes(app)
+        self._register_tag_collection_routes(app)
         app.router.add_get("/api/v1/videos", self._videos)
         app.router.add_get("/api/v1/groups/{group_id}/videos", self._group_videos)
         app.router.add_get("/api/v1/favorites", self._favorites)
@@ -323,9 +336,13 @@ class PlayerHttpServer(PlayerFeedPreferencesHttpMixin, PlayerCurationHttpMixin, 
         try:
             if sum(len(name) + len(value) for name, value in request.headers.items()) > self._max_header_size:
                 raise web.HTTPRequestHeaderFieldsTooLarge()
-            if request.content_length is not None and request.content_length > _MAX_JSON_BYTES:
+            resource = request.match_info.route.resource
+            cover_upload = (request.method == "PUT" and resource is not None
+                            and resource.canonical == "/api/v1/media/{media_id}/manual-cover")
+            body_limit = MAX_MANUAL_COVER_BYTES if cover_upload else _MAX_JSON_BYTES
+            if request.content_length is not None and request.content_length > body_limit:
                 raise web.HTTPRequestEntityTooLarge(
-                    max_size=_MAX_JSON_BYTES, actual_size=request.content_length
+                    max_size=body_limit, actual_size=request.content_length
                 )
             if request.method not in _ALLOWED_METHODS:
                 raise web.HTTPMethodNotAllowed(request.method, _ALLOWED_METHODS)
@@ -406,7 +423,7 @@ class PlayerHttpServer(PlayerFeedPreferencesHttpMixin, PlayerCurationHttpMixin, 
         elif path == "/healthz" or path.startswith("/api/"):
             # Handler-owned marker: errors and unversioned requests are no-store.
             cacheable = response.status == 200 and request.get("player_cover_cacheable", False)
-            response.headers["Cache-Control"] = _COVER_CACHE_CONTROL if cacheable else "no-store"
+            response.headers["Cache-Control"] = _COVER_CACHE_CONTROL if cacheable else "private, no-store" if path.endswith("/manual-cover") else "no-store"
             if cacheable:
                 response.headers.add("Vary", "Cookie")
         else:

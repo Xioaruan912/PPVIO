@@ -30,6 +30,11 @@ from ppvio.infrastructure.sqlite_read_mode import PlayerReadModeRepositoryMixin
 from ppvio.infrastructure.sqlite_feed_sessions import PlayerFeedSessionRepositoryMixin
 from ppvio.infrastructure.sqlite_feed_preferences import PlayerFeedPreferencesRepositoryMixin
 from ppvio.infrastructure.sqlite_curation import PlayerCurationRepositoryMixin
+from ppvio.infrastructure.sqlite_experience import PlayerExperienceRepositoryMixin
+from ppvio.infrastructure.sqlite_tag_catalog import PlayerTagCatalogRepositoryMixin
+from ppvio.infrastructure.sqlite_manual_covers import PlayerManualCoverRepositoryMixin
+from ppvio.infrastructure.sqlite_tag_filing import PlayerTagFilingRepositoryMixin
+from ppvio.infrastructure.sqlite_legacy_tags import PlayerLegacyTagRepositoryMixin
 from ppvio.infrastructure.sqlite_tags import PlayerTagRepositoryMixin
 from ppvio.infrastructure.sqlite_bookmarks import PlayerBookmarkRepositoryMixin
 from ppvio.infrastructure.sqlite_watched import PlayerWatchedRepositoryMixin
@@ -43,6 +48,11 @@ _DATE_GROUP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 class PlayerCatalogRepositorySQLite(
     PlayerMediaWorkRepositoryMixin,
+    PlayerTagCatalogRepositoryMixin,
+    PlayerExperienceRepositoryMixin,
+    PlayerManualCoverRepositoryMixin,
+    PlayerTagFilingRepositoryMixin,
+    PlayerLegacyTagRepositoryMixin,
     PlayerTagRepositoryMixin,
     PlayerCurationRepositoryMixin,
     PlayerFeedPreferencesRepositoryMixin,
@@ -127,6 +137,7 @@ class PlayerCatalogRepositorySQLite(
 
     async def apply_package(self, package: CatalogPackage) -> None:
         async with self._write_transaction() as conn:
+            package = self.remap_tag_filing_package(package)
             # A copy whose original is gone (deleted or not scanned yet) is left out; linked to
             # nothing it would show up as a video of its own.
             primaries = {item.media_id for item in package.media if not item.is_rendition}
@@ -750,6 +761,10 @@ class PlayerCatalogRepositorySQLite(
                 conn.execute("DELETE FROM player_media_curation WHERE media_id=?", (media_id,))
                 conn.execute("DELETE FROM player_pending_media_tags WHERE media_id=?", (media_id,))
                 conn.execute("DELETE FROM player_media_tags WHERE media_id=?", (media_id,))
+                conn.execute("DELETE FROM player_view_history WHERE media_id=?", (media_id,))
+                conn.execute("DELETE FROM player_media_ratings WHERE media_id=?", (media_id,))
+                conn.execute("DELETE FROM player_manual_covers WHERE media_id=?", (media_id,))
+                conn.execute("DELETE FROM player_tag_filing WHERE media_id=?", (media_id,))
                 conn.execute(
                     "DELETE FROM player_long_video_progress WHERE media_id=?",
                     (media_id,),

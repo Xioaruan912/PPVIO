@@ -3,6 +3,7 @@ from __future__ import annotations
 from aiohttp import web
 
 from ppvio.domain.tags import InvalidTag, Tag
+from ppvio.domain.tag_filing import TagFilingError
 
 
 def _tag_json(tag: Tag) -> dict[str, object]:
@@ -14,12 +15,21 @@ def _tag_id(request: web.Request) -> int:
         tag_id = int(request.match_info["tag_id"])
     except ValueError:
         raise web.HTTPNotFound(text="tag not found") from None
-    if tag_id <= 0:
+    if not 0 < tag_id < 2**63:
         raise web.HTTPNotFound(text="tag not found")
     return tag_id
 
 
 class PlayerTagHttpMixin:
+    async def _queue_tag_filing(self, media_id: str) -> dict | None:
+        service = getattr(self, "_tag_filing", None)
+        if service is None:
+            return None
+        try:
+            return await service.request(media_id)
+        except TagFilingError:
+            return {"status": "blocked", "last_error": "source_unavailable"}
+
     def _register_tag_routes(self, app: web.Application) -> None:
         app.router.add_get("/api/v1/tags", self._tags)
         app.router.add_post("/api/v1/tags", self._tag_create)
@@ -60,8 +70,12 @@ class PlayerTagHttpMixin:
     async def _tag_delete(self, request: web.Request) -> web.Response:
         await self._authenticate(request)
         self._require_same_origin(request)
-        if not await self._repository.delete_tag(_tag_id(request)):
+        tag_id = _tag_id(request)
+        affected = await self._repository.filing_media_ids_for_tag(tag_id)
+        if not await self._repository.delete_tag(tag_id):
             raise web.HTTPNotFound(text="tag not found")
+        for media_id in affected:
+            await self._queue_tag_filing(media_id)
         return web.json_response({"deleted": True})
 
     async def _media_tags(self, request: web.Request) -> web.Response:
@@ -75,7 +89,8 @@ class PlayerTagHttpMixin:
         details = await self._media_details(request.match_info["media_id"])
         if not await self._repository.set_media_tag(str(details["media_id"]), _tag_id(request), enabled=enabled):
             raise web.HTTPNotFound(text="tag not found")
-        return web.json_response({"ids": await self._repository.media_tag_ids(str(details["media_id"]))})
+        filing = await self._queue_tag_filing(str(details["media_id"]))
+        return web.json_response({"ids": await self._repository.media_tag_ids(str(details["media_id"])), "filing": filing})
 
     async def _media_tag_add(self, request: web.Request) -> web.Response:
         return await self._media_tag_set(request, True)

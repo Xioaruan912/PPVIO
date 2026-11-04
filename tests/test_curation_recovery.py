@@ -53,7 +53,7 @@ class CurationRecoveryTests(unittest.IsolatedAsyncioTestCase):
         tag = await self.prepare()
         await self.service.export_state()
         manifest = await self.manifest()
-        self.assertEqual(manifest["schema_version"], 4)
+        self.assertEqual(manifest["schema_version"], 5)
         self.assertEqual(manifest["curation"]["tags"][0]["name"], "favorite label")
         self.assertEqual(manifest["curation"]["media_tags"][0]["media_id"], self.pending_id)
         self.assertEqual(manifest["curation"]["organized"][0]["organized"], True)

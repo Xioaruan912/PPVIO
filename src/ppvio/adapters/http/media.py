@@ -5,6 +5,7 @@ import math
 from aiohttp import web
 
 from ppvio.application.favorite_backup import FavoriteBackupError
+from ppvio.domain.tag_filing import TagFilingError
 
 from .client import _prefetch_requested
 
@@ -175,7 +176,10 @@ class PlayerMediaHttpMixin:
         await self._authenticate(request)
         self._require_same_origin(request)
         media_id = request.match_info["media_id"]
-        undo_seconds = await self._media_deletions.request(media_id)
+        try:
+            undo_seconds = await self._media_deletions.request(media_id)
+        except TagFilingError:
+            raise web.HTTPConflict(text="视频正在移动归类，请稍后再删除") from None
         if undo_seconds is None:
             raise web.HTTPNotFound(text="media not found")
         return web.json_response(
@@ -251,6 +255,7 @@ class PlayerMediaHttpMixin:
         # Optional versioned archive cover: the browser only ever receives a
         # same-origin route, never a WebDAV path or credential.
         cover = await self._repository.active_cover(media_id)
+        manual_cover = await self._repository.get_manual_cover(media_id)
         return {
             "id": media_id,
             "width": details["width"],
@@ -258,13 +263,14 @@ class PlayerMediaHttpMixin:
             "duration_seconds": duration,
             "size_bytes": details.get("size_bytes"),
             "stream_url": stream_url,
-            "cover_url": None if cover is None else f"/api/v1/media/{media_id}/cover?v={cover['version']}",
+            "cover_url": f"/api/v1/media/{media_id}/manual-cover?v={manual_cover['version']}" if manual_cover is not None else None if cover is None else f"/api/v1/media/{media_id}/cover?v={cover['version']}",
             # Only when the cover carries one: a missing fingerprint is "no similarity
             # information", never a zero hash that a client could mistake for a match.
             **({"phash": cover["phash"]}
                if cover is not None and isinstance(cover.get("phash"), str) and cover["phash"]
                else {}),
             "organized": await self._repository.is_organized(media_id),
+            "premium": await self._repository.is_premium(media_id),
             "favorite": (
                 await self._repository.is_global_favorite(media_id)
                 if self._favorite_backup is not None

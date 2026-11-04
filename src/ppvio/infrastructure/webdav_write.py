@@ -310,14 +310,17 @@ class AioHttpWebDavWriteClient:
             response.headers.get("Content-Range"), response.headers.get("ETag"), chunks(),
         )
 
-    async def move(self, source: str, target: str, *, overwrite: bool) -> None:
+    async def move(self, source: str, target: str, *, overwrite: bool, source_etag: str | None = None) -> None:
         source_path = safe_storage_relpath(source)
         target_path = safe_storage_relpath(target)
+        if source_etag is not None and (not isinstance(source_etag, str) or len(source_etag) > 4096 or any(ord(char) < 32 or ord(char) == 127 for char in source_etag)):
+            raise WebDavWriteError("move", "invalid_source_validator")
         response = await self._request(
             "MOVE", source_path, operation="move",
             headers={
                 "Destination": self._url(target_path),
                 "Overwrite": "T" if overwrite else "F",
+                **({"If-Match": source_etag} if source_etag else {}),
             },
         )
         try:

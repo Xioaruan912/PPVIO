@@ -1,7 +1,7 @@
 import { act, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Media } from "../api";
+import { api, type Media } from "../api";
 import { PrivacyGuard } from "../ui/privacy";
 import { ClipList } from "./Feed";
 import { FeedItem } from "./FeedItem";
@@ -64,15 +64,35 @@ afterEach(async () => {
 
 describe("feed playback priority", () => {
   it("does not skip a new active video when an earlier organize save finishes", async () => {
+    vi.spyOn(api, "tags").mockResolvedValue({ items: [{ id: 1, name: "A", count: 0 }] });
+    vi.spyOn(api, "mediaTags").mockResolvedValue({ ids: [] });
+    const tagWrite = vi.spyOn(api, "setMediaTag");
     let resolve!: (result: { changed: number }) => void;
     vi.spyOn(curationApi, "batch").mockImplementation(() => new Promise(r => { resolve = r; }));
     await act(async () => root.render(<ClipList items={items} setItems={() => {}} organize />));
     const scroller = container.firstElementChild as HTMLDivElement;
     scroller.scrollBy = vi.fn();
-    await act(async () => [...container.querySelectorAll("button")].find(button => button.textContent?.includes("整理完成"))!.click());
+    await act(async () => [...container.querySelectorAll("button")].find(button => button.textContent?.includes("完成下一条"))!.click());
+    const tag = container.querySelector<HTMLInputElement>('[aria-label="标签 A"]')!;
+    expect(tag.disabled).toBe(true);
+    await act(async () => tag.click()); expect(tagWrite).not.toHaveBeenCalled();
     await enter(1);
     await act(async () => resolve({ changed: 1 }));
     expect(scroller.scrollBy).not.toHaveBeenCalled();
+  });
+
+  it("waits for the pending tag save before completing organization", async () => {
+    vi.spyOn(api, "tags").mockResolvedValue({ items: [{ id: 1, name: "A", count: 0 }] });
+    vi.spyOn(api, "mediaTags").mockResolvedValue({ ids: [] });
+    let resolve!: (value: { ids: number[] }) => void;
+    vi.spyOn(api, "setMediaTag").mockImplementation(() => new Promise(r => { resolve = r; }));
+    const complete = vi.spyOn(curationApi, "batch").mockResolvedValue({ changed: 1 });
+    await act(async () => root.render(<ClipList items={items} setItems={() => {}} organize />));
+    await act(async () => container.querySelector<HTMLInputElement>('[aria-label="标签 A"]')!.click());
+    const done = [...container.querySelectorAll("button")].find(button => button.textContent === "完成下一条")!;
+    expect(done.disabled).toBe(true);
+    await act(async () => done.click()); expect(complete).not.toHaveBeenCalled();
+    await act(async () => resolve({ ids: [1] })); expect(done.disabled).toBe(false);
   });
 
   it("waits for preload permission before seeking a neighbor and seeks again after its reload", async () => {

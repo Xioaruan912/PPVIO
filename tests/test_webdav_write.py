@@ -113,6 +113,15 @@ class WebDavWriteSafetyTests(unittest.TestCase):
 
 
 class WebDavWriteTransportTests(unittest.IsolatedAsyncioTestCase):
+    async def test_move_carries_source_validator_and_never_overwrites_target(self) -> None:
+        session = FakeSession(201)
+        client = AioHttpWebDavWriteClient("https://dav.example.test/dav", "u", "p", session=session)
+        await client.move("Library/source.mp4", "Library/标签/file.mp4", overwrite=False, source_etag='"v1"')
+        headers = session.calls[0][2]["headers"]
+        self.assertEqual(headers["If-Match"], '"v1"')
+        self.assertEqual(headers["Overwrite"], "F")
+        self.assertEqual(headers["Destination"], "https://dav.example.test/dav/Library/%E6%A0%87%E7%AD%BE/file.mp4")
+
     async def test_openlist_copy_uses_json_api_without_streaming_file_bytes(self) -> None:
         api = FakeApiSession([
             FakeResponse(200, body=json.dumps({

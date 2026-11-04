@@ -46,4 +46,7 @@ class PlayerCurationHttpMixin:
         wake = getattr(self, "_bookmark_snapshot_wake", None)
         if wake is not None:
             wake.set()
+        if payload.get("add_tags") or payload.get("remove_tags") or payload.get("organized") is True:
+            for media_id in payload["media_ids"]:
+                await self._queue_tag_filing(media_id)
         return web.json_response({"changed": changed})

@@ -2,6 +2,8 @@ import { EyeIcon, EyeSlashIcon } from "@phosphor-icons/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Media } from "../api";
 import { setPref, usePrefs } from "../prefs";
+import { addToQueue, getQueue } from "../queue";
+import { toast } from "./toast";
 import { PreviewButton } from "./SeekPreview";
 
 export function formatDuration(seconds: number | null): string {
@@ -38,6 +40,7 @@ export function Grid({ items, onOpen, onEnd, done, error, onRetry, wide, progres
               <WatchedBar seconds={progress?.get(item.id)} duration={item.duration_seconds} />
             </button>
             <PreviewButton media={item} onPlay={at => onOpen(index, at)} />
+            <button type="button" aria-label={`加入待播第 ${index + 1} 个视频`} onClick={() => toast(addToQueue(item) ? "已加入待播队列" : getQueue().length >= 100 ? "队列已满，最多100个" : "已在待播队列中")} className="absolute left-1 top-1 min-h-9 rounded-full bg-black/65 px-2 text-[11px] text-white">待播</button>
           </div>
         ))}
       </div>
@@ -59,12 +62,16 @@ export function Cover({ src, className }: { src: string; className: string }) {
     onError={() => { if (attempt < COVER_RETRIES) setTimeout(() => setAttempt(n => n + 1), 1500 * 2 ** attempt + Math.random() * 500); }} />;
 }
 
-type Change = { id: string; favorite: boolean } | { id: string; removed: true };
+type Change = { id: string; favorite?: boolean; premium?: boolean; cover_url?: string | null } | { id: string; removed: true };
 const changeListeners = new Set<(change: Change) => void>();
 
 /** Tell every wall on the page that a video was favorited or deleted somewhere else (a player, the clip list). */
 export function announce(change: Change): void {
   changeListeners.forEach(listener => listener(change));
+}
+
+export function subscribeMediaChanges(listener: (change: Change) => void) {
+  changeListeners.add(listener); return () => { changeListeners.delete(listener); };
 }
 
 /** How far into a video the owner got, as a thin line along the bottom of its cover. */
@@ -96,7 +103,7 @@ export function usePages(fetchPage: (cursor: string | null, offset: number) => P
   useEffect(() => {
     const apply = (change: Change) => setItems(list => "removed" in change
       ? list.filter(m => m.id !== change.id)
-      : list.map(m => m.id === change.id ? { ...m, favorite: change.favorite } : m));
+      : list.map(m => m.id === change.id ? { ...m, ...change } : m));
     changeListeners.add(apply);
     return () => { changeListeners.delete(apply); };
   }, []);

@@ -1,4 +1,4 @@
-import { ArrowDownIcon, CaretLeftIcon, CheckIcon, HeartIcon, TrashIcon } from "@phosphor-icons/react";
+import { ArrowDownIcon, CaretLeftIcon, TrashIcon } from "@phosphor-icons/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, chooseStream, Unauthorized, type Media } from "../api";
 import { usePrefs } from "../prefs";
@@ -8,6 +8,8 @@ import { FeedItem } from "./FeedItem";
 import type { BufferReadiness } from "./useFeedPlayback";
 import { curationApi } from "../curationApi";
 import { FeedPreferencesButton } from "../ui/FeedPreferences";
+import { QuickTagPanel } from "../ui/QuickTags";
+import { subscribeMediaChanges } from "../ui/Grid";
 
 /** Append new clips, never one already in the list. */
 export function mergeFeed(current: Media[], incoming: Media[]): Media[] {
@@ -32,6 +34,8 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, organ
   const [active, setActive] = useState(start);
   const container = useRef<HTMLDivElement>(null);
   const prefs = usePrefs();
+  useEffect(() => subscribeMediaChanges(change => setItems(list => "removed" in change
+    ? list.filter(item => item.id !== change.id) : list.map(item => item.id === change.id ? { ...item, ...change } : item))), [setItems]);
   const [preloadFor, setPreloadFor] = useState<{ id: string; src: string } | null>(null);
   const current = items[active];
   const currentKey = current?.clip?.key ?? current?.id;
@@ -119,14 +123,12 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, organ
   return (
     <div ref={container} className="h-dvh snap-y snap-mandatory overflow-y-scroll [scrollbar-width:none]">
       {organize && current && (
-        <div className="fixed inset-x-0 bottom-[calc(5.25rem+env(safe-area-inset-bottom))] z-20 mx-auto grid max-w-md grid-cols-2 gap-2 px-4">
-          <OrganizeButton label="删除" disabled={!current.deletable} onClick={() => void remove(current)}><TrashIcon size={24} /></OrganizeButton>
-          <OrganizeButton label="收藏" accent onClick={() => {
-            if (!current.favorite) { setFavorite(current.id, true); void api.favorite(current.id, true).catch(() => setFavorite(current.id, false)); }
-            next();
-          }}><HeartIcon size={24} weight="fill" /></OrganizeButton>
-          <OrganizeButton label={current.organized ? "已整理" : "整理完成"} disabled={curating || current.organized} onClick={() => void complete()}><CheckIcon size={24} /></OrganizeButton>
-          <OrganizeButton label="跳过" onClick={next}><ArrowDownIcon size={24} /></OrganizeButton>
+        <div className="fixed inset-x-0 bottom-[calc(5.25rem+env(safe-area-inset-bottom))] z-20 mx-auto flex max-w-md flex-col gap-2 px-3">
+          <div className="max-h-[35dvh] overflow-y-auto rounded-2xl bg-black/80 p-2 text-white backdrop-blur-md"><QuickTagPanel key={current.id} media={current} compact onDone={() => void complete()} doneLabel={curating ? "保存整理中…" : "完成下一条"} finishing={curating} /></div>
+          <div className="grid grid-cols-2 gap-2">
+            <OrganizeButton label="删除" disabled={!current.deletable} onClick={() => void remove(current)}><TrashIcon size={22} /></OrganizeButton>
+            <OrganizeButton label="跳过" onClick={next}><ArrowDownIcon size={22} /></OrganizeButton>
+          </div>
         </div>
       )}
       {onClose && (

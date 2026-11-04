@@ -17,7 +17,8 @@ from ppvio.adapters.http import PlayerHttpServer
 from ppvio.application.archive_read import ArchiveReadRouter, ReadModeService
 from ppvio.application.auth import SessionService
 from ppvio.application.catalog import CatalogSyncService
-from ppvio.application.collection_backup import CollectionBackupService
+from ppvio.application.tag_filing import TagFilingService
+from ppvio.application.legacy_tag_groups import LegacyTagGroupService
 from ppvio.application.duplicate_copies import DuplicateCopyCleaner
 from ppvio.application.favorite_backup import FavoriteBackupService, SourceMediaError
 from ppvio.application.faststart import FaststartBackfill, FaststartService
@@ -241,25 +242,6 @@ async def _favorite_sync_poll(
             pass
 
 
-async def _collection_backup_poll(
-    backup: CollectionBackupService, seconds: int, stop: asyncio.Event
-) -> None:
-    while not stop.is_set():
-        try:
-            result = await backup.sync_once()
-            if result.processed:
-                _LOG.info(
-                    "Player collection backup batch: copied=%s moved=%s removed=%s failed=%s",
-                    result.copied, result.moved, result.removed, result.failed,
-                )
-        except Exception:
-            _LOG.exception("Player collection backup worker failed")
-        try:
-            await asyncio.wait_for(stop.wait(), timeout=seconds)
-        except asyncio.TimeoutError:
-            pass
-
-
 async def _cache_maintenance_poll(
     store: RangeStore, is_playing: Callable[[], bool], stop: asyncio.Event, *, seconds: float = 60,
 ) -> None:
@@ -342,10 +324,8 @@ async def run(settings: PlayerSettings) -> None:
             repository, favorite_writer, favorite_source, recovery,
             source_location=favorite_source_location,
         )
-        # Collection folders use the same storage client as favorites, even after a settings change.
-        collection_backup = CollectionBackupService(
-            repository, lambda: favorite_backup.writer, favorite_source_location,
-        )
+        tag_filing = TagFilingService(repository, writer=lambda: favorite_backup.writer)
+        legacy_tag_groups = LegacyTagGroupService(repository, writer=lambda: favorite_backup.writer)
         direct_reader = (
             OpenListDirectReader(OpenListDirectSettings(
                 settings.openlist_api_url, username, password,
@@ -434,6 +414,8 @@ async def run(settings: PlayerSettings) -> None:
             warm_head_bytes=settings.warm_head_mb * 1024 * 1024,
             warm_tail_bytes=settings.warm_tail_mb * 1024 * 1024,
             favorite_backup=favorite_backup,
+            tag_filing=tag_filing,
+            legacy_tag_groups=legacy_tag_groups,
             recovery_service=recovery,
             storage_client_factory=storage_client_factory,
             cover_mirror=cover_mirror,
@@ -452,8 +434,7 @@ async def run(settings: PlayerSettings) -> None:
         await site.start()
         tasks: list[asyncio.Task[object]] = [
             asyncio.create_task(_catalog_poll(sync, catalog_source, settings.catalog_poll_seconds, stop, sync_status)),
-            asyncio.create_task(_favorite_sync_poll(favorite_backup, 5, stop)),
-            asyncio.create_task(_collection_backup_poll(collection_backup, 5, stop)),
+            asyncio.create_task(tag_filing.run(stop)),
             asyncio.create_task(_cache_maintenance_poll(range_store, lambda: server.active_playback_streams > 0, stop)),
         ]
         # Plain files arrive without a duration; read it from the MP4 header, paused while playing.

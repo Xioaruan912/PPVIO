@@ -76,7 +76,7 @@ class BookmarkRecoveryTests(unittest.IsolatedAsyncioTestCase):
                     break
                 await asyncio.sleep(0.005)
             self.assertIsNotNone(manifest, "an unsaved bookmark is exported after restart")
-            self.assertEqual(manifest["bookmarks"], [saved])
+            self.assertEqual(manifest["bookmarks"], [{key:value for key,value in saved.items() if key != "tag_ids"}])
             self.assertIsNone(await self.repo.pending_bookmark_snapshot_revision())
             # Deletion is another state change and must reach the same background exporter.
             response = await second.post("/api/v1/auth/login", json={"secret": "s" * 32})
@@ -113,6 +113,19 @@ class BookmarkRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 task.cancel()
                 with self.assertRaises(asyncio.CancelledError):
                     await task
+
+    async def test_shutdown_at_snapshot_completion_cannot_lose_cancellation(self) -> None:
+        await self.repo.add_bookmark(self.pending_id, 1)
+        export = self.service.export_state
+        async def finish_and_cancel():
+            receipt = await export()
+            task.cancel()
+            return receipt
+        self.service.export_state = finish_and_cancel
+        task = asyncio.create_task(self.service.run_bookmark_snapshots(asyncio.Event()))
+        with self.assertRaises(asyncio.CancelledError):
+            await asyncio.wait_for(task, 0.2)
+        self.assertIsNone(await self.repo.pending_bookmark_snapshot_revision())
 
     async def test_storage_put_during_bookmark_export_preserves_new_folder_and_remote_snapshot(self) -> None:
         await self._assert_storage_put_during_export(self.settings.endpoint_url)
@@ -240,7 +253,7 @@ class BookmarkRecoveryTests(unittest.IsolatedAsyncioTestCase):
         remote = self.factory.clients[self.settings.endpoint_url]
         manifest = await EncryptedManifestStore(remote, self.cipher, "player").load()
         self.assertEqual(manifest["bookmarks"], [asdict(saved)])
-        self.assertEqual(manifest["schema_version"], 4)
+        self.assertEqual(manifest["schema_version"], 5)
         new = PlayerCatalogRepositorySQLite(self.path / "bookmarks.sqlite3")
         await new.open()
         try:

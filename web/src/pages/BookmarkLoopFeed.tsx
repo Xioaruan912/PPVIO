@@ -3,7 +3,7 @@ import type { Media } from "../api";
 import { mediaTools } from "../mediaTools";
 import { Centered, ClipList } from "../feed/Feed";
 
-export function BookmarkLoopFeed({ onClose }: { onClose: () => void }) {
+export function BookmarkLoopFeed({ onClose, tagId }: { onClose: () => void; tagId?: number }) {
   const [items, setItems] = useState<Media[]>([]), [failed, setFailed] = useState(false), [done, setDone] = useState(false);
   const current = useRef<{ controller: AbortController; offset: number; busy: boolean; done: boolean } | null>(null);
   const load = useCallback(async () => {
@@ -11,7 +11,7 @@ export function BookmarkLoopFeed({ onClose }: { onClose: () => void }) {
     if (!page || page.busy || page.done) return;
     page.busy = true; setFailed(false);
     try {
-      const result = await mediaTools.allBookmarks(page.offset, page.controller.signal);
+      const result = await mediaTools.allBookmarks(page.offset, page.controller.signal, tagId);
       if (current.current !== page || page.controller.signal.aborted) return;
       page.offset += result.items.length; page.done = !result.has_more || !result.items.length;
       setDone(page.done);
@@ -22,7 +22,7 @@ export function BookmarkLoopFeed({ onClose }: { onClose: () => void }) {
       });
     } catch { if (current.current === page && !page.controller.signal.aborted) setFailed(true); }
     finally { page.busy = false; }
-  }, []);
+  }, [tagId]);
   useEffect(() => {
     const page = { controller: new AbortController(), offset: 0, busy: false, done: false }; current.current = page;
     void load();

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from ppvio.domain.tag_filing import TagFilingError
 
 # Whether a media item is visible. A media item that is queued for deletion stays
 # hidden however its archive locations look, so a catalog refresh can never bring
@@ -33,6 +34,11 @@ class PlayerMediaDeletionRepositoryMixin:
         window). Returns the undo deadline that applies.
         """
         async with self._write_transaction() as conn:
+            moving = conn.execute("SELECT plan_source,status FROM player_tag_filing WHERE media_id=?", (media_id,)).fetchone()
+            if moving is not None:
+                if moving[0] is not None or moving[1] == "moving":
+                    raise TagFilingError("media_is_moving")
+                conn.execute("UPDATE player_tag_filing SET status='paused',last_error='media_deletion_queued' WHERE media_id=? AND status IN ('pending','retry')", (media_id,))
             conn.execute(
                 """
                 INSERT INTO player_media_deletions(
@@ -63,6 +69,10 @@ class PlayerMediaDeletionRepositoryMixin:
             conn.execute(
                 f"UPDATE media SET active = {MEDIA_ACTIVE_CASE} WHERE media_id=?", (media_id,)
             )
+            conn.execute("""UPDATE player_tag_filing
+                SET status='pending',last_error=NULL,next_attempt_at=?,updated_at=?
+                WHERE media_id=? AND status='paused' AND last_error='media_deletion_queued'
+                  AND plan_source IS NULL""", (now, now, media_id))
             return True
 
     async def is_media_deletion_queued(self, media_id: str) -> bool:

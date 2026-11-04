@@ -1,7 +1,7 @@
 import { DotsThreeIcon, HeartIcon, SpeakerHighIcon, SpeakerSlashIcon, PlayIcon } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, chooseStream, type Media } from "../api";
+import { chooseStream, type Media } from "../api";
 import { setPref, usePrefs } from "../prefs";
 import { useLocked } from "../ui/privacy";
 import { GestureRecognizer } from "./gestures";
@@ -14,6 +14,9 @@ import { BookmarkButton } from "../ui/Bookmarks";
 import { useHorizontalSeek } from "../player/useHorizontalSeek";
 import { usePlaybackRecovery, RecoveryNotice } from "../player/usePlaybackRecovery";
 import { useClipRange } from "../player/clipRange";
+import { usePlaybackHistory } from "../player/usePlaybackHistory";
+import { QuickTagButton, QuickTagPanel } from "../ui/QuickTags";
+import { Sheet } from "../ui/Sheet";
 
 interface Props {
   media: Media;
@@ -29,14 +32,16 @@ interface Props {
   /** 整理模式 buttons sit at the bottom; the rail moves up out of their way. */
   raised?: boolean;
   startAt?: number;
+  onEnded?: () => void;
 }
 
 interface Burst { id: number; x: number; y: number }
 
-export function FeedItem({ media, active, mounted, eager = false, onBufferReadiness, onFavorite, onRemove, raised = false, startAt }: Props) {
+export function FeedItem({ media, active, mounted, eager = false, onBufferReadiness, onRemove, raised = false, startAt, onEnded }: Props) {
   const prefs = usePrefs();
   const locked = useLocked();
   const [menu, setMenu] = useState(false);
+  const [quickTags, setQuickTags] = useState(false);
   const video = useRef<HTMLVideoElement>(null);
   const startedAt = useRef(false);
   const [paused, setPaused] = useState(false);
@@ -57,6 +62,7 @@ export function FeedItem({ media, active, mounted, eager = false, onBufferReadin
   });
 
   const enabled = active && mounted && !locked && visible;
+  usePlaybackHistory(video, media, src, enabled);
   const { range, invalid } = useClipRange(video, src, mounted && (active || eager) && !locked && visible, clip, active && !paused, active);
   const horizontal = useHorizontalSeek(video, src, enabled && !invalid, range);
   const recovery = usePlaybackRecovery(video, src, enabled);
@@ -64,7 +70,7 @@ export function FeedItem({ media, active, mounted, eager = false, onBufferReadin
   // Play only the clip on screen; a clip that leaves the screen starts over next time.
   useEffect(() => {
     if (active) return;
-    setPaused(false); setFast(false); setMenu(false);
+    setPaused(false); setFast(false); setMenu(false); setQuickTags(false);
     const el = video.current;
     if (!el) return;
     if (!clip) el.currentTime = 0;
@@ -85,18 +91,12 @@ export function FeedItem({ media, active, mounted, eager = false, onBufferReadin
     return () => window.removeEventListener("keydown", onKey);
   }, [active, menu, prefs.muted]);
 
-  const favorite = (on: boolean) => {
-    if (media.favorite === on) return;
-    onFavorite(media.id, on);
-    void api.favorite(media.id, on).catch(() => onFavorite(media.id, !on));
-  };
-
   useEffect(() => {
     const g = new GestureRecognizer((event, x) => {
       const el = video.current;
       if (event === "tap") setPaused(value => !value);
       else if (event === "double-tap") {
-        favorite(true);
+        setQuickTags(true);
         const y = lastY.current;
         setBursts(list => [...list, { id: performance.now(), x, y }]);
       } else if (event === "long-press-start" && el) { el.playbackRate = 2; setFast(true); }
@@ -112,7 +112,8 @@ export function FeedItem({ media, active, mounted, eager = false, onBufferReadin
         <img src={media.cover_url} alt="" aria-hidden className="absolute inset-0 size-full scale-110 object-cover opacity-50 blur-2xl" />
       )}
       {mounted ? (
-        <video ref={attachVideo} src={src} poster={media.cover_url ?? undefined} playsInline loop={!clip} muted={prefs.muted}
+        <video ref={attachVideo} src={src} poster={media.cover_url ?? undefined} playsInline loop={!clip && !onEnded} muted={prefs.muted}
+          onEnded={() => { if (!clip && enabled && !paused) onEnded?.(); }}
           preload={!locked && visible && (active || eager) ? "auto" : "metadata"}
           onLoadedMetadata={event => { if (!startedAt.current && startAt !== undefined) { event.currentTarget.currentTime = Math.min(startAt, event.currentTarget.duration); startedAt.current = true; } }}
           onLoadStart={() => { setFailed(false); setLoading(true); }}
@@ -163,9 +164,7 @@ export function FeedItem({ media, active, mounted, eager = false, onBufferReadin
       {enabled && horizontal.target !== null && <div className="pointer-events-none absolute inset-x-0 bottom-40"><SeekPreview id={media.id} time={horizontal.target} enabled /></div>}
 
       <div className={`absolute right-3 flex flex-col items-center gap-5 transition-[bottom] ${raised ? "bottom-[calc(13rem+env(safe-area-inset-bottom))]" : "bottom-[calc(5.5rem+env(safe-area-inset-bottom))]"}`}>
-        <RailButton label={media.favorite ? "取消收藏" : "收藏"} onClick={() => favorite(!media.favorite)}>
-          <HeartIcon size={30} weight="fill" className={media.favorite ? "text-accent" : "text-white"} />
-        </RailButton>
+        <QuickTagButton media={media} enabled={enabled} />
         <RailButton label={prefs.muted ? "打开声音" : "静音"} onClick={() => setPref("muted", !prefs.muted)}>
           {prefs.muted ? <SpeakerSlashIcon size={28} weight="fill" /> : <SpeakerHighIcon size={28} weight="fill" />}
         </RailButton>
@@ -179,7 +178,8 @@ export function FeedItem({ media, active, mounted, eager = false, onBufferReadin
         )}
       </div>
 
-      <MediaActions media={media} open={menu} onClose={() => setMenu(false)} onRemove={onRemove} />
+      <MediaActions media={media} open={menu} onClose={() => setMenu(false)} onRemove={onRemove} video={video} />
+      <Sheet open={quickTags && enabled} onClose={() => setQuickTags(false)} title="标签收藏"><QuickTagPanel media={media} onDone={() => setQuickTags(false)} /></Sheet>
 
       <div className="absolute inset-x-0 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] px-3">
         <SeekBar video={video} source={src} mediaId={media.id} enabled={enabled && !invalid} duration={media.duration_seconds ?? 0} bounds={range} />

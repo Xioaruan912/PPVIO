@@ -18,6 +18,9 @@ from ppvio.application.ports import (
     WebDavWriteClient,
 )
 from ppvio.application.curation_snapshot import read_curation_snapshot
+from ppvio.application.experience_snapshot import (
+    read_experience, remap_legacy_tag_rules, restore_experience, restored_tag_mapping,
+)
 from ppvio.domain.bookmarks import PlayerBookmark, validate_bookmarks
 from ppvio.domain.storage_settings import (
     PlayerStorageSettings,
@@ -35,14 +38,14 @@ PASSWORD_CONTEXT = b"webdav-password"
 # collections), and the encryption contexts above must never change with it - those
 # strings are part of the key derivation, so bumping one would make every existing
 # backup undecryptable.
-MANIFEST_SCHEMA_VERSION = 4
+MANIFEST_SCHEMA_VERSION = 5
 # The backup lives inside the video folder under plain names; 99_TGPLAYER is the
 # name earlier installs used there, and is renamed on first contact.
 BACKUP_DIR = "收藏"
 FAVORITES_DIR = "全部"
 LEGACY_BACKUP_DIR = "99_TGPLAYER"
-_SUPPORTED_MANIFEST_VERSIONS = (1, 2, 3, MANIFEST_SCHEMA_VERSION)
-_MAX_SNAPSHOT_BYTES = 16 * 1024 * 1024
+_SUPPORTED_MANIFEST_VERSIONS = (1, 2, 3, 4, MANIFEST_SCHEMA_VERSION)
+_MAX_SNAPSHOT_BYTES = 64 * 1024 * 1024
 # Snapshot revisions kept on the storage: the one the pointer names and two before it.
 _KEPT_REVISIONS = 3
 _MEDIA_ID_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -178,7 +181,7 @@ class EncryptedManifestStore:
 
         encrypted = self._cipher.encrypt(_json_bytes(value), context=self._context)
         if len(encrypted) > _MAX_SNAPSHOT_BYTES:
-            raise RecoveryError("Player snapshot exceeds the 16 MiB recovery limit")
+            raise RecoveryError("Player snapshot exceeds the recovery size limit")
         filename = f"{self._name}.{revision}.enc"
         revision_path = _join(self._root, filename)
         existing = await self._client.get_bytes(revision_path, max_bytes=_MAX_SNAPSHOT_BYTES)
@@ -244,13 +247,15 @@ class PlayerRecoveryService:
             wake.clear()
             if await self._repository.pending_bookmark_snapshot_revision() is not None:
                 try:
-                    await asyncio.wait_for(self.export_state(), timeout=_BOOKMARK_SNAPSHOT_TIMEOUT_SECONDS)
+                    async with asyncio.timeout(_BOOKMARK_SNAPSHOT_TIMEOUT_SECONDS):
+                        await self.export_state()
                 except Exception as exc:  # a remote outage must never discard a local bookmark
                     _LOG.warning("Bookmark snapshot retry pending error=%s", type(exc).__name__)
                     await asyncio.sleep(_BOOKMARK_SNAPSHOT_RETRY_SECONDS)
                     continue
             try:
-                await asyncio.wait_for(wake.wait(), timeout=_BOOKMARK_SNAPSHOT_IDLE_SECONDS)
+                async with asyncio.timeout(_BOOKMARK_SNAPSHOT_IDLE_SECONDS):
+                    await wake.wait()
             except TimeoutError:
                 pass
 
@@ -306,6 +311,9 @@ class PlayerRecoveryService:
             collections = await self._list_collections()
             bookmarks = await self._repository.export_bookmarks()
             curation = await self._repository.export_curation()
+            experience = await self._repository.export_experience()
+            covers = await self._repository.export_manual_covers()
+            filing = await self._repository.export_tag_filing_snapshot()
             config_store = EncryptedManifestStore(
                 client, self._cipher, root, context=CONFIG_CONTEXT, name="player-config",
             )
@@ -322,7 +330,7 @@ class PlayerRecoveryService:
             settings = replace(current, revision=revision)
             config = self._config_snapshot(settings)
             manifest = self._manifest_snapshot(
-                settings, revision, favorites, location_by_id, pending_jobs, collections, bookmarks, curation,
+                settings, revision, favorites, location_by_id, pending_jobs, collections, bookmarks, curation, experience, covers, filing,
             )
             await config_store.save_atomic(config)
             await manifest_store.save_atomic(manifest)
@@ -384,6 +392,7 @@ class PlayerRecoveryService:
             collections = self._read_collections(manifest)
             bookmarks = self._read_bookmarks(manifest)
             curation = read_curation_snapshot(manifest)
+            experience = read_experience(manifest, curation, bookmarks)
 
             verified: list[tuple[str, str, int, str, int, str]] = []
             deleting: list[tuple[str, str, int, str, int]] = []
@@ -449,8 +458,10 @@ class PlayerRecoveryService:
                     await self._repository.set_global_favorite(media_id, False)
                     await self._repository.enqueue_favorite_sync(media_id, "delete")
                     await self._repository.mark_favorite_delete_intent(media_id)
-                await self._restore_collections(collections)
+                await self._restore_collections(collections, await restored_tag_mapping(self._repository, curation))
                 await self._repository.apply_pending_curation_tags()
+                if experience is not None:
+                    await restore_experience(self._repository, manifest, curation, bookmarks, experience)
             return RecoveryResult(True, revision, len(verified) + len(pending))
         except RecoveryError:
             raise
@@ -581,11 +592,14 @@ class PlayerRecoveryService:
             collections = await self._list_collections()
             bookmarks = await self._repository.export_bookmarks()
             curation = await self._repository.export_curation()
+            experience = await self._repository.export_experience()
+            covers = await self._repository.export_manual_covers()
+            filing = await self._repository.export_tag_filing_snapshot()
             config = self._config_snapshot(new_settings)
             location_by_id = {item[0]: item[1:] for item in migrated_locations}
             manifest = self._manifest_snapshot(
                 new_settings, new_settings.revision, favorite_rows, location_by_id,
-                pending_jobs, collections, bookmarks, curation,
+                pending_jobs, collections, bookmarks, curation, experience, covers, filing,
             )
             await config_store.save_atomic(config)
             await manifest_store.save_atomic(manifest)
@@ -691,7 +705,8 @@ class PlayerRecoveryService:
             )
         return collections
 
-    async def _restore_collections(self, collections: list[dict[str, Any]]) -> None:
+    async def _restore_collections(self, collections: list[dict[str, Any]],
+                                   tag_mapping: dict[int, int] | None = None) -> None:
         """Collections are matched by name and kind, never overwritten.
 
         The snapshot's copy of a collection is a stale echo of an editable field, so
@@ -710,8 +725,11 @@ class PlayerRecoveryService:
             collection_id = known.get(key)
             if collection_id is None:
                 try:
+                    rules = entry["rules_json"]
+                    if entry["kind"] == "manual":
+                        rules = remap_legacy_tag_rules(rules, tag_mapping or {}, clear_unmapped=True)
                     created = await self._repository.create(
-                        entry["name"], entry["kind"], entry["rules_json"]
+                        entry["name"], entry["kind"], rules
                     )
                 except ValueError as exc:
                     raise RecoveryError("remote collection cannot be restored") from exc
@@ -744,6 +762,9 @@ class PlayerRecoveryService:
         collections: list[dict[str, Any]],
         bookmarks: list[PlayerBookmark],
         curation: dict,
+        experience: dict,
+        covers: list,
+        filing: list,
     ) -> dict[str, Any]:
         items: list[dict[str, Any]] = []
         for media_id, created_at in favorites:
@@ -784,6 +805,9 @@ class PlayerRecoveryService:
             "collections": collections,
             "bookmarks": [asdict(bookmark) for bookmark in bookmarks],
             "curation": curation,
+            "experience": experience,
+            "manual_covers": covers,
+            "tag_filing": filing,
         }
 
     def _settings_from_snapshot(self, config: dict[str, Any]) -> PlayerStorageSettings:

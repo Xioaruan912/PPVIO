@@ -1,5 +1,5 @@
 import {
-  ArrowClockwiseIcon, ArrowCounterClockwiseIcon, CaretLeftIcon, CornersOutIcon, DotsThreeIcon, HeartIcon,
+  ArrowClockwiseIcon, ArrowCounterClockwiseIcon, CaretLeftIcon, CornersOutIcon, DotsThreeIcon,
   PauseIcon, PictureInPictureIcon, PlayIcon, SpeakerHighIcon, SpeakerSlashIcon,
 } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
@@ -17,6 +17,8 @@ import { SeekPreview } from "../ui/SeekPreview";
 import { BookmarkButton } from "../ui/Bookmarks";
 import { useHorizontalSeek } from "./useHorizontalSeek";
 import { usePlaybackRecovery, RecoveryNotice } from "./usePlaybackRecovery";
+import { usePlaybackHistory } from "./usePlaybackHistory";
+import { QuickTagButton } from "../ui/QuickTags";
 
 const SPEEDS = [1, 1.25, 1.5, 2];
 const SAVE_EVERY_MS = 10_000;
@@ -47,10 +49,10 @@ export function playerKey(key: string): PlayerKey | null {
 /** The end of the buffered range the playhead is in, or the playhead itself. */
 type FullscreenVideo = HTMLVideoElement & { webkitEnterFullscreen?: () => void };
 
-export function LongPlayer({ media, next, onClose, onNext, startAt }: {
+export function LongPlayer({ media, next, onClose, onNext, startAt, continueNext = false }: {
   media: Media; onClose: () => void;
   /** The next long video of the wall this one was opened from; it starts by itself when this one ends. */
-  next?: Media; onNext?: () => void; startAt?: number;
+  next?: Media; onNext?: () => void; startAt?: number; continueNext?: boolean;
 }) {
   const prefs = usePrefs();
   const locked = useLocked();
@@ -65,7 +67,6 @@ export function LongPlayer({ media, next, onClose, onNext, startAt }: {
   const [muted, setMuted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [jump, setJump] = useState<"back" | "forward" | null>(null);
-  const [favorite, setFavorite] = useState(media.favorite);
   const [failed, setFailed] = useState(false);
   const [menu, setMenu] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
@@ -83,6 +84,7 @@ export function LongPlayer({ media, next, onClose, onNext, startAt }: {
 
   const horizontal = useHorizontalSeek(video, src, !locked);
   const recovery = usePlaybackRecovery(video, src, !locked);
+  usePlaybackHistory(video, media, src, !locked);
 
   useEffect(() => { setLongPlayback(true); return () => setLongPlayback(false); }, []);
   useEffect(() => {
@@ -131,12 +133,6 @@ export function LongPlayer({ media, next, onClose, onNext, startAt }: {
   };
   const toggle = () => { const el = video.current; if (el) void (el.paused ? el.play() : el.pause()); };
   const toggleMute = () => { const el = video.current; if (el) { el.muted = !el.muted; setMuted(el.muted); } };
-  const toggleFavorite = () => {
-    const on = !favorite;
-    setFavorite(on);
-    announce({ id: media.id, favorite: on });
-    void api.favorite(media.id, on).catch(() => { setFavorite(!on); announce({ id: media.id, favorite: !on }); toast("收藏没保存上，再试一次"); });
-  };
   const remove = async () => {
     try { await api.remove(media.id); } catch { toast("删除失败，请稍后再试"); return; }
     announce({ id: media.id, removed: true });
@@ -226,7 +222,7 @@ export function LongPlayer({ media, next, onClose, onNext, startAt }: {
         onPlaying={() => { setFailed(false); setLoading(false); }}
         onPlay={event => { setPlaying(true); setCountdown(null); setLoading(event.currentTarget.readyState < 3); }}
         onPause={() => { setPlaying(false); setControls(true); setLoading(false); }}
-        onEnded={() => { if (next && onNext) setCountdown(NEXT_IN_SECONDS); }}
+        onEnded={() => { if ((next || continueNext) && onNext) setCountdown(NEXT_IN_SECONDS); }}
         onTimeUpdate={event => setTime(event.currentTarget.currentTime)} />
 
       <div className="absolute inset-0 touch-none select-none"
@@ -257,10 +253,7 @@ export function LongPlayer({ media, next, onClose, onNext, startAt }: {
             <div className="pointer-events-auto flex items-center gap-1 px-3 pt-[max(0.75rem,env(safe-area-inset-top))] text-white">
               <button type="button" onClick={onClose} aria-label="返回" className="grid size-10 shrink-0 place-items-center rounded-full"><CaretLeftIcon size={24} weight="bold" /></button>
               <p className="min-w-0 flex-1 truncate text-[15px] font-medium">{title}</p>
-              <button type="button" onClick={toggleFavorite} aria-label={favorite ? "取消收藏" : "收藏"} aria-pressed={favorite}
-                className="grid size-10 place-items-center rounded-full">
-                <HeartIcon size={26} weight="fill" className={favorite ? "text-accent" : "text-white"} />
-              </button>
+              <QuickTagButton media={media} enabled={!locked} />
               <BookmarkButton media={media} video={video} enabled={!locked} />
               <button type="button" onClick={() => setMenu(true)} aria-label="更多" className="grid size-10 place-items-center rounded-full"><DotsThreeIcon size={26} weight="bold" /></button>
             </div>
@@ -295,10 +288,10 @@ export function LongPlayer({ media, next, onClose, onNext, startAt }: {
         )}
       </AnimatePresence>
 
-      {countdown !== null && next && (
+      {countdown !== null && (next || continueNext) && (
         <div className="absolute bottom-[calc(6.5rem+env(safe-area-inset-bottom))] right-4 z-10 flex w-72 max-w-[calc(100%-2rem)] gap-3 rounded-[14px] bg-black/75 p-2.5 text-white backdrop-blur-md" role="status">
           <div className="relative aspect-video w-24 shrink-0 overflow-hidden rounded-[8px] bg-surface">
-            {next.cover_url && <Cover src={next.cover_url} className={`size-full object-cover ${prefs.coverBlur ? "blur-md" : ""}`} />}
+            {next?.cover_url && <Cover src={next.cover_url} className={`size-full object-cover ${prefs.coverBlur ? "blur-md" : ""}`} />}
           </div>
           <div className="flex min-w-0 flex-1 flex-col justify-between">
             <p className="text-[13px] text-white/80">{countdown} 秒后播放下一个</p>
@@ -310,7 +303,7 @@ export function LongPlayer({ media, next, onClose, onNext, startAt }: {
         </div>
       )}
 
-      <MediaActions media={media} open={menu} onClose={() => setMenu(false)} onRemove={media.deletable ? () => void remove() : undefined} />
+      <MediaActions media={media} open={menu} onClose={() => setMenu(false)} onRemove={media.deletable ? () => void remove() : undefined} video={video} />
     </div>
   );
 }

@@ -11,7 +11,7 @@ type View = "short" | "long" | "folders";
 type Recent = Media & { position_seconds: number };
 
 /** ``refresh`` changes whenever a player closes, so watch progress is re-read. */
-export function Library({ onOpen, onBookmarks, onCuration, refresh = 0, selectedFolder, onFolderChange }: { onOpen: Open; onBookmarks?: () => void; onCuration?: () => void; refresh?: number; selectedFolder?: LibraryFolder | null; onFolderChange?: (folder: LibraryFolder | null) => void }) {
+export function Library({ onOpen, onBookmarks, onCuration, onHistory, onChannels, onPremium, onQueue, refresh = 0, selectedFolder, onFolderChange }: { onOpen: Open; onBookmarks?: () => void; onCuration?: () => void; onHistory?: () => void; onChannels?: () => void; onPremium?: () => void; onQueue?: () => void; refresh?: number; selectedFolder?: LibraryFolder | null; onFolderChange?: (folder: LibraryFolder | null) => void }) {
   const [view, setView] = useState<View>("short");
   const [localFolder, setLocalFolder] = useState<LibraryFolder | null>(null);
   const folder = selectedFolder === undefined ? localFolder : selectedFolder;
@@ -27,6 +27,7 @@ export function Library({ onOpen, onBookmarks, onCuration, refresh = 0, selected
         {onCuration && <button type="button" onClick={onCuration} className="min-h-10 rounded-full bg-surface px-3 text-[14px]">待整理</button>}
         <BlurToggle />
       </header>
+      {!folder && <div className="mb-4 grid grid-cols-4 gap-2 text-[12px]">{([["最近看过", onHistory], ["频道", onChannels], ["精品", onPremium], ["待播", onQueue]] as const).map(([label, action]) => action && <button key={label} type="button" onClick={action} className="min-h-11 rounded-xl bg-surface">{label}</button>)}</div>}
       {folder ? <FolderWall folder={folder} onOpen={onOpen} /> : (
         <>
           <div className="mb-4 flex gap-1 rounded-full bg-surface p-1" role="tablist">

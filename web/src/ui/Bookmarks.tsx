@@ -8,16 +8,19 @@ import { clock } from "./SeekPreview";
 import { Cover } from "./Grid";
 import { usePrefs } from "../prefs";
 import { useLocked } from "./privacy";
+import { BookmarkEditor } from "./BookmarkEditor";
+import { BookmarkTagFilter } from "./BookmarkTagFilter";
 
 export function BookmarkButton({ media, video, enabled }: { media: Media; video: RefObject<HTMLVideoElement | null>; enabled: boolean }) {
   const [open, setOpen] = useState(false), [name, setName] = useState(""), [items, setItems] = useState<Bookmark[]>([]);
   const [loading, setLoading] = useState(false);
+  const [editing, setEditing] = useState<Bookmark | null>(null);
   const [busy, setBusy] = useState(false), [failed, setFailed] = useState(false);
   const [asClip, setAsClip] = useState(false), [length, setLength] = useState(20);
   const locked = useLocked();
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
-  useEffect(() => { setOpen(false); setName(""); }, [media.id, enabled, locked]);
+  useEffect(() => { setOpen(false); setName(""); setEditing(null); }, [media.id, enabled, locked]);
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController(); setFailed(false); setLoading(true);
@@ -53,7 +56,8 @@ export function BookmarkButton({ media, video, enabled }: { media: Media; video:
   };
   return <>
     <button type="button" aria-label="片内书签" disabled={!enabled} onClick={() => setOpen(true)} className="grid size-11 place-items-center rounded-full text-white disabled:opacity-40"><BookmarkSimpleIcon size={26} /></button>
-    <Sheet open={open && enabled && !locked} onClose={() => setOpen(false)} title="片内书签">
+    <Sheet open={open && enabled && !locked} onClose={() => setOpen(false)} title={editing ? "编辑片段" : "片内书签"}>
+      {editing ? <BookmarkEditor bookmark={editing} onSaved={updated => setItems(list => list.map(item => item.id === updated.id ? updated : item))} onClose={() => setEditing(null)} /> : <>
       <div className="mb-3 flex gap-2 px-2"><input aria-label="书签备注" placeholder="备注（可选）" maxLength={40} value={name} onChange={event => setName(event.target.value)} className="min-w-0 flex-1 rounded-lg bg-bg px-3 text-sm" />
         <button type="button" disabled={busy || loading} onClick={() => void add()} className="flex h-11 items-center gap-1 rounded-full bg-accent px-3 text-sm text-white disabled:opacity-50"><PlusIcon size={16} />收藏当前时刻</button></div>
       <div className="mb-3 flex flex-wrap items-center gap-3 px-3 text-sm"><label className="flex min-h-10 items-center gap-2"><input type="checkbox" checked={asClip} onChange={event => setAsClip(event.target.checked)} />保存为片段</label><label className="flex min-h-10 items-center gap-2">片段时长<input aria-label="片段时长（秒）" type="number" min={1} max={600} value={length} onChange={event => setLength(Math.max(1, Math.min(600, Number(event.target.value) || 20)))} className="w-16 rounded-lg bg-bg px-2 py-2" />秒</label><p className="w-full text-xs text-muted">连刷时循环选定范围；未设范围的书签默认播放 20 秒。</p></div>
@@ -62,34 +66,56 @@ export function BookmarkButton({ media, video, enabled }: { media: Media; video:
       {!loading && !failed && !items.length && <p className="px-3 py-5 text-sm text-muted">记下想回来的位置，不需要给视频起名字。</p>}
       {items.map(b => <div key={b.id} className="flex items-center gap-2">
         <button type="button" aria-label={`跳到 ${clock(b.position_seconds)}`} onClick={() => { if (video.current) video.current.currentTime = b.position_seconds; setOpen(false); }} className="min-w-0 flex-1 rounded-lg px-3 py-3 text-left text-sm active:bg-raised"><span className="mr-3 tabular-nums text-accent">{clock(b.position_seconds)}{b.end_seconds != null ? `–${clock(b.end_seconds)}` : ""}</span>{b.name || "收藏的片段"}</button>
+        <button type="button" aria-label={`编辑 ${clock(b.position_seconds)} 片段`} onClick={() => setEditing(b)} className="min-h-11 px-2 text-xs text-accent">编辑</button>
         <button type="button" disabled={busy} onClick={() => void changeRange(b)} className="min-h-11 px-2 text-xs text-accent disabled:opacity-40">{b.end_seconds != null ? "改为时刻" : "设为片段"}</button>
         <button type="button" aria-label={`删除 ${clock(b.position_seconds)} 书签`} onClick={() => void remove(b)} className="grid size-11 place-items-center text-muted"><TrashIcon size={18} /></button>
       </div>)}
+      </>}
     </Sheet>
   </>;
 }
 
-export function BookmarkWall({ onBack, onOpen, onLoop }: { onBack: () => void; onOpen: (media: Media, at: number) => void; onLoop?: () => void }) {
+export function BookmarkWall({ onBack, onOpen, onLoop }: { onBack: () => void; onOpen: (media: Media, at: number) => void; onLoop?: (tagId?: number) => void }) {
   const [items, setItems] = useState<(Bookmark & { media: Media })[]>([]), [done, setDone] = useState(false), [failed, setFailed] = useState(false);
   const prefs = usePrefs();
-  const busy = useRef(false), alive = useRef(true), offset = useRef(0);
+  const [tagId, setTagId] = useState<number | undefined>();
+  const request = useRef<{ controller: AbortController; offset: number; busy: boolean } | null>(null);
   const load = async () => {
-    if (busy.current) return;
-    busy.current = true; setFailed(false);
-    try { const page = await mediaTools.allBookmarks(offset.current); if (!alive.current) return; offset.current += page.items.length; setItems(list => [...list, ...page.items.filter(b => !list.some(x => x.id === b.id))]); setDone(!page.has_more); }
-    catch { if (alive.current) setFailed(true); }
-    finally { busy.current = false; }
+    const current = request.current;
+    if (!current || current.busy || current.controller.signal.aborted) return;
+    current.busy = true; setFailed(false);
+    try {
+      const page = await mediaTools.allBookmarks(current.offset, current.controller.signal, tagId);
+      if (request.current !== current || current.controller.signal.aborted) return;
+      current.offset += page.items.length;
+      setItems(list => [...list, ...page.items.filter(b => !list.some(x => x.id === b.id))]); setDone(!page.has_more);
+    } catch { if (request.current === current && !current.controller.signal.aborted) setFailed(true); }
+    finally { current.busy = false; }
   };
-  useEffect(() => { alive.current = true; void load(); return () => { alive.current = false; }; }, []);
+  useEffect(() => {
+    const current = { controller: new AbortController(), offset: 0, busy: false };
+    request.current = current; setItems([]); setDone(false); void load();
+    return () => current.controller.abort();
+  }, [tagId]);
+  const remove = async (b: Bookmark) => {
+    const current = request.current;
+    try {
+      await mediaTools.deleteBookmark(b.media_id, b.id);
+      if (request.current !== current || current?.controller.signal.aborted) return;
+      setItems(list => list.filter(x => x.id !== b.id));
+      if (current) current.offset = Math.max(0, current.offset - 1);
+    } catch { if (request.current === current && !current?.controller.signal.aborted) toast("删除失败，请重试"); }
+  };
   return <main className="mx-auto min-h-dvh max-w-3xl px-3 pb-24 pt-[max(1rem,env(safe-area-inset-top))]">
-    <header className="mb-4 flex items-center gap-3"><button type="button" aria-label="返回片库" onClick={onBack} className="grid size-11 place-items-center"><CaretLeftIcon size={22} /></button><h1 className="flex-1 text-2xl font-semibold">收藏的片段</h1>{onLoop && <button type="button" onClick={onLoop} className="min-h-11 rounded-full bg-accent px-4 text-sm text-white">连刷片段</button>}</header>
+    <header className="mb-4 flex items-center gap-3"><button type="button" aria-label="返回片库" onClick={onBack} className="grid size-11 place-items-center"><CaretLeftIcon size={22} /></button><h1 className="flex-1 text-2xl font-semibold">收藏的片段</h1>{onLoop && <button type="button" onClick={() => onLoop(tagId)} className="min-h-11 rounded-full bg-accent px-4 text-sm text-white">连刷片段</button>}</header>
+    <BookmarkTagFilter value={tagId} onChange={setTagId} />
     {!items.length && !failed && <p className="py-16 text-center text-sm text-muted">{done ? "还没有片内书签，在播放器中收藏一个时刻即可。" : "正在读取片段…"}</p>}
     <div className="grid gap-2 sm:grid-cols-2">{items.map(b => <div key={b.id} className="flex gap-3 rounded-xl bg-surface p-2">
       <button type="button" onClick={() => onOpen(b.media, b.position_seconds)} className="flex min-w-0 flex-1 items-center gap-3 text-left" aria-label={`播放 ${b.name || clock(b.position_seconds)} 片段`}>
         <div className="aspect-video w-28 shrink-0 overflow-hidden rounded-lg bg-black">{b.media.cover_url && <Cover src={b.media.cover_url} className={`size-full object-cover ${prefs.coverBlur ? "blur-xl scale-110" : ""}`} />}</div>
         <span className="min-w-0 text-sm"><span className="block truncate">{b.name || "收藏的片段"}</span><span className="text-accent">{clock(b.position_seconds)}{b.end_seconds != null ? `–${clock(b.end_seconds)}` : ""}</span></span>
       </button>
-      <button type="button" aria-label="删除片段书签" onClick={() => void mediaTools.deleteBookmark(b.media_id, b.id).then(() => { setItems(list => list.filter(x => x.id !== b.id)); offset.current = Math.max(0, offset.current - 1); }).catch(() => toast("删除失败，请重试"))} className="grid size-10 shrink-0 place-items-center text-muted"><TrashIcon size={18} /></button>
+      <button type="button" aria-label="删除片段书签" onClick={() => void remove(b)} className="grid size-10 shrink-0 place-items-center text-muted"><TrashIcon size={18} /></button>
     </div>)}</div>
     {failed ? <button type="button" onClick={() => void load()} className="mx-auto my-8 block rounded-full bg-surface px-5 py-3 text-sm">读取失败，点击重试</button>
       : !done && <button type="button" onClick={() => void load()} className="mx-auto my-6 block rounded-full bg-surface px-5 py-3 text-sm">加载更多片段</button>}
