@@ -161,8 +161,11 @@ class PlayerLegacyTagRepositoryMixin:
 
     @staticmethod
     def _delete_legacy_groups(conn, collection_ids) -> int:
-        return sum(conn.execute("DELETE FROM collections WHERE collection_id=? AND kind='manual'", (identity,)).rowcount
-                   for identity in dict.fromkeys(collection_ids))
+        removed = sum(conn.execute("DELETE FROM collections WHERE collection_id=? AND kind='manual'", (identity,)).rowcount
+                      for identity in dict.fromkeys(collection_ids))
+        if removed:
+            conn.execute("UPDATE player_bookmark_snapshot SET revision=revision+1 WHERE singleton=1")
+        return removed
 
     async def delete_legacy_groups(self, collection_ids) -> int:
         """Metadata only; callers needing verification must use the retirement service."""

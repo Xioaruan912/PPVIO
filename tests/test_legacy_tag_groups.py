@@ -249,7 +249,10 @@ class LegacyTagGroupTests(unittest.IsolatedAsyncioTestCase):
     async def test_metadata_delete_is_selected_manual_only_and_never_deletes_media(self):
         other = await self.repo.create("保留", "manual", None)
         smart = await self.repo.create("smart", "smart", "{}")
+        await self.repo.acknowledge_bookmark_snapshot(await self.repo.pending_bookmark_snapshot_revision())
+        self.assertIsNone(await self.repo.pending_bookmark_snapshot_revision())
         self.assertEqual(await self.repo.delete_legacy_groups([self.group.collection_id, smart.collection_id]), 1)
+        self.assertIsNotNone(await self.repo.pending_bookmark_snapshot_revision())
         self.assertIsNotNone(await self.repo.get(other.collection_id))
         self.assertIsNotNone(await self.repo.get(smart.collection_id))
         self.assertIsNotNone(await self.repo.active_media_details(A))

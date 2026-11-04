@@ -58,7 +58,7 @@ Own new web/src/experienceApi.ts,pages/History.tsx,pages/Channels.tsx,pages/TagM
 
 ### Task6: Parent recovery and final release
 - [x] v5 snapshot extra metadata/manualcovers,64MiBguard,1–4compatibility, atomic validation/remapping tests; removeallnewmetadata onfinaldelete; tagsdelete removes channel refs/pendingaliases safely.
-- [ ] Fullcheck, independent backend/frontend review+fixes, syntheticbrowseracceptance all7, prod-copy22→24 rehearsal, cleancommit/pushmain/release.py and neighbor/health/schema/assets verification.
+- [x] Fullcheck, independent backend/frontend review+fixes, syntheticbrowseracceptance all7, prod-copy22→24 rehearsal, cleancommit/pushmain/release.py and neighbor/health/schema/assets verification.
 
 ## Ledger
 
@@ -70,7 +70,9 @@ Own new web/src/experienceApi.ts,pages/History.tsx,pages/Channels.tsx,pages/TagM
 - [x] QuickTagPanel/TagCollections replace legacy favorite UI; common/recent tags, per-write error and completion gating.
 - [x] 0024 durable MOVE service, source endpoint/ETag guard, no overwrite, crash reconciliation, deletion coordination and ID-preserving scan/restore.
 - [x] Explicit legacy-group import, verified retirement, per-file cleanup, old recursive backup worker disabled.
-- [ ] Final code review fixes, complete check and synthetic browser acceptance.
-- [ ] Push and deploy clean main; live existing-data MOVE, rescan/range verification, verified old-group retirement and encrypted v5 export.
+- [x] Final code review fixes, complete check and synthetic browser acceptance.
+- [x] Push and deploy clean main; live existing-data MOVE, rescan/range verification, verified old-group retirement and encrypted v5 export.
 
 Ledger 2026-11-04: baseline check passed before edits. Focused filing40, legacy23 and all feature tests have offline proof; final integrated gates still in progress. Read-only SQLite backup rehearsal22→24 preserved every row of33 original tables, integrity/foreign keys and idempotence pass. Fresh metadata:174 distinct tagged +66 group members =178 distinct candidate videos;4 manual groups/70 memberships. Counts may change before live maintenance, so recapture. Review identified late bookmark-filter pages, organize save gating, queue unavailable-next, stalled history, legacy marker remapping and undo-deletion resumption; regressions added before fixes.
+
+Final acceptance 2026-11-04:628 backend and159 frontend tests/build pass; synthetic390×844 browser covers all7 and error/race flows. Code1f0621d released via release.py. Existing176 available videos all moved, stat-size and actual player Range checks176/176 passed again after cleanup. Complete scan of all9 migration directories rediscovered every original ID, active-primary1442 remained unchanged. The slow full historical archive scan was stopped in favor of this complete migration-directory scan; no claim of a completed full historical scan. Four old manual groups retired after verification;68 authorized backup files removed, cleanup pending0. Two preexisting absent members retained tag associations, only obsolete group relations removed. v5 export forced after discovering missing retirement dirty trigger; regression and durable trigger fix added before final release. Final release identities and live encrypted-manifest proof are recorded in task outputs.
