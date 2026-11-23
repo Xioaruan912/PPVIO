@@ -354,7 +354,7 @@ class AioHttpWebDavWriteClient:
             category = "unsafe_redirect"
         elif status in {401, 403}:
             category = "unauthorized"
-        elif status == 429:
+        elif status in {423, 429}:
             category = "rate_limited"
         elif status >= 500:
             category = "server_error"

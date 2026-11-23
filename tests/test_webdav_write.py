@@ -296,6 +296,15 @@ class WebDavWriteTransportTests(unittest.IsolatedAsyncioTestCase):
             await client.open_stream("root/missing")
         self.assertEqual(raised.exception.status_code, 404)
 
+    async def test_locked_423_is_classified_as_transient_rate_limited(self) -> None:
+        client = AioHttpWebDavWriteClient(
+            "https://dav.example.test", "u", "p", session=FakeSession(423),
+        )
+        with self.assertRaises(WebDavWriteError) as raised:
+            await client.ensure_directory("Library/.tgvio")
+        self.assertEqual(raised.exception.status_code, 423)
+        self.assertEqual(raised.exception.category, "rate_limited")
+
 
 if __name__ == "__main__":
     unittest.main()
