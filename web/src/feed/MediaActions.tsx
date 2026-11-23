@@ -6,6 +6,7 @@ import { ManualCoverPicker } from "../ui/ManualCoverPicker";
 import { QuickTagPanel } from "../ui/QuickTags";
 import { announce } from "../ui/Grid";
 import { addToQueue, getQueue } from "../queue";
+import { StarRating } from "../ratings";
 
 type Step = "menu" | "tags" | "cover";
 export function MediaActions({ media, open, onClose, onRemove, video }: {
@@ -29,6 +30,10 @@ export function MediaActions({ media, open, onClose, onRemove, video }: {
   };
   return <Sheet open={open} onClose={onClose} title={step === "tags" ? "标签收藏" : step === "cover" ? "选择封面" : undefined}>
     {step === "menu" && <>
+      <div className="mb-1 flex items-center justify-between rounded-[16px] border border-line bg-black/35 px-4 py-2">
+        <span className="text-[14px] font-medium text-muted">星级评分</span>
+        <StarRating mediaId={media.id} compact />
+      </div>
       <SheetButton onClick={() => setStep("tags")}>标签收藏</SheetButton>
       <SheetButton onClick={() => { toast(addToQueue(media) ? "已加入待播队列" : getQueue().length >= 100 ? "队列已满，最多100个" : "已在待播队列中"); onClose(); }}>加入待播队列</SheetButton>
       {video && <SheetButton onClick={() => setStep("cover")}>选择封面</SheetButton>}

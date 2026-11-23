@@ -1,6 +1,6 @@
 import {
   ArrowsClockwiseIcon, CaretLeftIcon, CaretRightIcon, ClockCounterClockwiseIcon, FadersHorizontalIcon,
-  FolderIcon, QueueIcon, StarIcon,
+  FolderIcon, QueueIcon, SparkleIcon, SquaresFourIcon, StarIcon,
 } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -32,7 +32,7 @@ type View = "short" | "long" | "folders";
 type Recent = Media & { position_seconds: number };
 
 /** ``refresh`` changes whenever a player closes, so watch progress is re-read. */
-export function Library({ onOpen, onBookmarks, onCuration, onHistory, onChannels, onPremium, onQueue, refresh = 0, selectedFolder, onFolderChange }: { onOpen: Open; onBookmarks?: () => void; onCuration?: () => void; onHistory?: () => void; onChannels?: () => void; onPremium?: () => void; onQueue?: () => void; refresh?: number; selectedFolder?: LibraryFolder | null; onFolderChange?: (folder: LibraryFolder | null) => void }) {
+export function Library({ onOpen, onBookmarks, onCuration, onHistory, onChannels, onPremium, onQueue, onMultiView, onLoops, refresh = 0, selectedFolder, onFolderChange }: { onOpen: Open; onBookmarks?: () => void; onCuration?: () => void; onHistory?: () => void; onChannels?: () => void; onPremium?: () => void; onQueue?: () => void; onMultiView?: () => void; onLoops?: () => void; refresh?: number; selectedFolder?: LibraryFolder | null; onFolderChange?: (folder: LibraryFolder | null) => void }) {
   const [view, setView] = useState<View>("short");
   const [localFolder, setLocalFolder] = useState<LibraryFolder | null>(null);
   const [pullY, setPullY] = useState(0);
@@ -78,6 +78,34 @@ export function Library({ onOpen, onBookmarks, onCuration, onHistory, onChannels
         {onCuration && <button type="button" onClick={onCuration} className="ios-card pressable min-h-10 rounded-full px-3.5 text-[13px] font-medium text-ink hover:border-gold/30">待整理</button>}
         <BlurToggle />
       </header>
+      {!folder && (onLoops || onMultiView) && (
+        <div className="mb-3 grid grid-cols-2 gap-2">
+          {onLoops && (
+            <motion.button type="button" onClick={onLoops} whileTap={{ scale: 0.96 }} transition={SPRING_TAP}
+              className="luxury-card sheen-overlay flex items-center gap-2.5 rounded-[18px] px-3.5 py-3 text-left">
+              <span className="grid size-9 shrink-0 place-items-center rounded-[12px] bg-gold-soft text-gold-bright">
+                <SparkleIcon size={18} weight="fill" />
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-[13px] font-semibold text-ink">高光连刷</span>
+                <span className="block truncate text-[11px] text-muted">循环精选片段</span>
+              </span>
+            </motion.button>
+          )}
+          {onMultiView && (
+            <motion.button type="button" onClick={onMultiView} whileTap={{ scale: 0.96 }} transition={SPRING_TAP}
+              className="luxury-card sheen-overlay flex items-center gap-2.5 rounded-[18px] px-3.5 py-3 text-left">
+              <span className="grid size-9 shrink-0 place-items-center rounded-[12px] bg-white/[0.08] text-gold-bright">
+                <SquaresFourIcon size={18} weight="fill" />
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-[13px] font-semibold text-ink">多屏同看</span>
+                <span className="block truncate text-[11px] text-muted">2 / 4 路同步播放</span>
+              </span>
+            </motion.button>
+          )}
+        </div>
+      )}
       {!folder && (
         <div className="mb-4 grid grid-cols-4 gap-2">
           {shortcuts.map(([label, action, Icon]) => action && (

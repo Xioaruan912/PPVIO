@@ -24,9 +24,10 @@ const Channels = lazy(() => import("./pages/Channels").then(m => ({ default: m.C
 const TagManager = lazy(() => import("./pages/TagManager").then(m => ({ default: m.TagManager })));
 const Queue = lazy(() => import("./pages/Queue").then(m => ({ default: m.Queue })));
 const QueuePlayer = lazy(() => import("./player/QueuePlayer").then(m => ({ default: m.QueuePlayer })));
+const MultiView = lazy(() => import("./pages/MultiView").then(m => ({ default: m.MultiView })));
 
 type Tab = "feed" | "library" | "favorites" | "settings";
-type Overlay = { kind: "clips"; items: Media[]; index: number; at?: number } | { kind: "long"; items: Media[]; index: number; at?: number } | { kind: "duplicates" } | { kind: "bookmarks" } | { kind: "curation" } | { kind: "loops"; tagId?: number } | { kind: "history" | "channels" | "premium" | "tags" | "queue" } | { kind: "queue-player"; ids: string[]; index: number } | null;
+type Overlay = { kind: "clips"; items: Media[]; index: number; at?: number } | { kind: "long"; items: Media[]; index: number; at?: number } | { kind: "duplicates" } | { kind: "bookmarks" } | { kind: "curation" } | { kind: "loops"; tagId?: number } | { kind: "multiview" } | { kind: "history" | "channels" | "premium" | "tags" | "queue" } | { kind: "queue-player"; ids: string[]; index: number } | null;
 
 /**
  * A short clip opens the swipe list of the short clips around it; a long one opens the film player,
@@ -91,7 +92,7 @@ export function App() {
         {libraryOpened && (
           <div hidden={tab !== "library"}>
             <motion.div animate={tab === "library" ? { opacity: 1, y: 0, scale: 1 } : { opacity: 0.7, y: 10, scale: 0.99 }} transition={SPRING_UI}>
-              <Library selectedFolder={route.folder} onFolderChange={folder => navigate({ ...route, folder })} onOpen={open} refresh={closed} onBookmarks={() => navigate({ ...route, tab, overlay: { kind: "bookmarks" } })} onCuration={() => navigate({ ...route, tab, overlay: { kind: "curation" } })} onHistory={() => show("history")} onChannels={() => show("channels")} onPremium={() => show("premium")} onQueue={() => show("queue")} />
+              <Library selectedFolder={route.folder} onFolderChange={folder => navigate({ ...route, folder })} onOpen={open} refresh={closed} onBookmarks={() => navigate({ ...route, tab, overlay: { kind: "bookmarks" } })} onCuration={() => navigate({ ...route, tab, overlay: { kind: "curation" } })} onHistory={() => show("history")} onChannels={() => show("channels")} onPremium={() => show("premium")} onQueue={() => show("queue")} onMultiView={() => navigate({ ...route, tab, overlay: { kind: "multiview" } })} onLoops={() => navigate({ ...route, tab, overlay: { kind: "loops" } })} />
             </motion.div>
           </div>
         )}
@@ -136,6 +137,12 @@ export function App() {
             <motion.div key="ov-loops" className="fixed inset-0 z-30 bg-black"
               initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }} transition={SPRING_STAGE}>
               <BookmarkLoopFeed onClose={close} tagId={overlay.tagId} />
+            </motion.div>
+          )}
+          {overlay?.kind === "multiview" && (
+            <motion.div key="ov-multiview" className="fixed inset-0 z-30 bg-black"
+              initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }} transition={SPRING_STAGE}>
+              <MultiView onBack={close} onOpen={open} />
             </motion.div>
           )}
           {overlay?.kind === "curation" && <OverlaySheet key="ov-curation"><Curation onBack={close} onOpen={open} /></OverlaySheet>}

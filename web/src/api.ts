@@ -59,6 +59,13 @@ const q = (params: Record<string, string | number | null | undefined>) =>
   new URLSearchParams(Object.entries(params).filter(([, v]) => v !== null && v !== undefined && v !== "").map(([k, v]) => [k, String(v)])).toString();
 const json = (method: string, body?: unknown): RequestInit => ({ method, body: body === undefined ? undefined : JSON.stringify(body) });
 
+export interface CacheStats {
+  available: boolean;
+  bytes?: number;
+  chunks?: number;
+  max_bytes?: number;
+}
+
 export const api = {
   media: (id: string, signal?: AbortSignal) => request<Media>(`/api/v1/media/${id}`, { signal }),
   login: (secret: string) => request<{ authenticated: boolean }>("/api/v1/auth/login", json("POST", { secret })),
@@ -98,6 +105,7 @@ export const api = {
     request<StorageSettings>("/api/v1/settings/storage", json("PUT", body)),
   folders: (path: string) => request<{ path: string; folders: string[] }>(`/api/v1/settings/folders?${q({ path })}`),
   status: () => request<Status>("/api/v1/status"),
+  cacheStats: () => request<CacheStats>("/api/v1/cache-stats"),
   readMode: () => request<{ mode: "webdav" | "direct"; direct_available: boolean }>("/api/v1/settings/read-mode"),
   setReadMode: (mode: "webdav" | "direct") => request<{ mode: string }>("/api/v1/settings/read-mode", json("PUT", { mode })),
 };

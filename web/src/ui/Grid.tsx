@@ -1,9 +1,10 @@
-import { EyeIcon, EyeSlashIcon } from "@phosphor-icons/react";
+import { EyeIcon, EyeSlashIcon, StarIcon } from "@phosphor-icons/react";
 import { motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Media } from "../api";
 import { setPref, usePrefs } from "../prefs";
 import { addToQueue, getQueue } from "../queue";
+import { useRatings } from "../ratings";
 import { toast } from "./toast";
 import { PreviewButton } from "./SeekPreview";
 import { SPRING_TAP, SPRING_UI, waveDelay } from "./motion";
@@ -21,6 +22,8 @@ export function Grid({ items, onOpen, onEnd, done, error, onRetry, wide, progres
   onRetry?: () => void; wide?: boolean; progress?: Map<string, number>;
 }) {
   const prefs = usePrefs();
+  const ratings = useRatings();
+  const [peeking, setPeeking] = useState<string | null>(null);
   const sentinel = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = sentinel.current;
@@ -32,27 +35,41 @@ export function Grid({ items, onOpen, onEnd, done, error, onRetry, wide, progres
   return (
     <>
       <div className={`grid gap-2.5 ${wide ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4" : "grid-cols-3 sm:grid-cols-4 lg:grid-cols-6"}`}>
-        {items.map((item, index) => (
-          <motion.div key={item.id}
-            initial={index < 12 ? { opacity: 0, y: 14, scale: 0.96 } : false}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ ...SPRING_UI, delay: index < 12 ? waveDelay(index, 11) : 0 }}
-            className="group relative min-w-0">
-            <motion.button type="button" onClick={() => onOpen(index)} aria-label={`播放第 ${index + 1} 个视频`}
-              whileTap={{ scale: 0.96 }} transition={SPRING_TAP}
-              className={`luxury-card sheen-overlay relative block w-full rounded-[16px] ${wide ? "aspect-video" : "aspect-[3/4]"}`}>
-              {item.cover_url && <Cover src={item.cover_url}
-                className={`size-full object-cover transition-[filter,transform] duration-500 ease-out group-hover:scale-[1.06] ${prefs.coverBlur ? "blur-xl scale-110" : ""}`} />}
-              <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/80 via-black/25 to-transparent" />
-              <span className="glass-pill absolute bottom-1.5 right-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums text-ink">{formatDuration(item.duration_seconds)}</span>
-              <WatchedBar seconds={progress?.get(item.id)} duration={item.duration_seconds} />
-            </motion.button>
-            <PreviewButton media={item} onPlay={at => onOpen(index, at)} />
-            <button type="button" aria-label={`加入待播第 ${index + 1} 个视频`}
-              onClick={() => toast(addToQueue(item) ? "已加入待播队列" : getQueue().length >= 100 ? "队列已满，最多100个" : "已在待播队列中")}
-              className="glass-pill pressable absolute left-1.5 top-1.5 min-h-8 rounded-full px-2.5 text-[11px] font-medium text-ink/95 hover:border-gold/40">待播</button>
-          </motion.div>
-        ))}
+        {items.map((item, index) => {
+          const blurred = prefs.coverBlur && !(prefs.peekOnHold && peeking === item.id);
+          const stars = ratings[item.id] ?? 0;
+          return (
+            <motion.div key={item.id}
+              initial={index < 12 ? { opacity: 0, y: 14, scale: 0.96 } : false}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ ...SPRING_UI, delay: index < 12 ? waveDelay(index, 11) : 0 }}
+              className="group relative min-w-0">
+              <motion.button type="button" onClick={() => onOpen(index)} aria-label={`播放第 ${index + 1} 个视频`}
+                whileTap={{ scale: 0.96 }} transition={SPRING_TAP}
+                onPointerEnter={e => { if (prefs.coverBlur && prefs.peekOnHold && e.pointerType === "mouse") setPeeking(item.id); }}
+                onPointerLeave={() => { if (peeking === item.id) setPeeking(null); }}
+                onPointerDown={() => { if (prefs.coverBlur && prefs.peekOnHold) setPeeking(item.id); }}
+                onPointerUp={() => { if (peeking === item.id) setPeeking(null); }}
+                onPointerCancel={() => { if (peeking === item.id) setPeeking(null); }}
+                className={`luxury-card sheen-overlay relative block w-full rounded-[16px] ${wide ? "aspect-video" : "aspect-[3/4]"}`}>
+                {item.cover_url && <Cover src={item.cover_url}
+                  className={`size-full object-cover transition-[filter,transform] duration-300 ease-out group-hover:scale-[1.05] ${blurred ? "blur-xl scale-110" : ""}`} />}
+                <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/80 via-black/25 to-transparent" />
+                {stars > 0 && (
+                  <span className="glass-pill absolute bottom-1.5 left-1.5 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-gold-bright">
+                    <StarIcon size={10} weight="fill" />{stars}
+                  </span>
+                )}
+                <span className="glass-pill absolute bottom-1.5 right-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums text-ink">{formatDuration(item.duration_seconds)}</span>
+                <WatchedBar seconds={progress?.get(item.id)} duration={item.duration_seconds} />
+              </motion.button>
+              <PreviewButton media={item} onPlay={at => onOpen(index, at)} />
+              <button type="button" aria-label={`加入待播第 ${index + 1} 个视频`}
+                onClick={() => toast(addToQueue(item) ? "已加入待播队列" : getQueue().length >= 100 ? "队列已满，最多100个" : "已在待播队列中")}
+                className="glass-pill pressable absolute left-1.5 top-1.5 min-h-8 rounded-full px-2.5 text-[11px] font-medium text-ink/95 hover:border-gold/40">待播</button>
+            </motion.div>
+          );
+        })}
       </div>
       {error ? <div role="alert" className="flex items-center justify-center gap-3 py-6 text-[14px] text-muted">
         加载失败

@@ -45,7 +45,7 @@ export function IosSwitch({ checked, onChange }: { checked: boolean; onChange: (
   );
 }
 
-export function PrefToggle({ pref, title, hint }: { pref: "lowRes" | "coverBlur" | "privacyLock"; title: string; hint: string }) {
+export function PrefToggle({ pref, title, hint }: { pref: "lowRes" | "coverBlur" | "privacyLock" | "peekOnHold"; title: string; hint: string }) {
   const prefs = usePrefs();
   return (
     <label className="flex cursor-pointer items-center justify-between gap-4 px-4 py-3.5 transition-colors hover:bg-white/[0.025]">

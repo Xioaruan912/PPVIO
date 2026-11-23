@@ -1,6 +1,7 @@
 import {
   ArrowClockwiseIcon, ArrowCounterClockwiseIcon, CaretLeftIcon, CornersOutIcon, DotsThreeIcon,
-  LockSimpleIcon, LockSimpleOpenIcon, PauseIcon, PictureInPictureIcon, PlayIcon, SpeakerHighIcon, SpeakerSlashIcon,
+  DeviceRotateIcon, FrameCornersIcon, LockSimpleIcon, LockSimpleOpenIcon, PauseIcon,
+  PictureInPictureIcon, PlayIcon, RepeatIcon, SpeakerHighIcon, SpeakerSlashIcon, SunDimIcon,
 } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
@@ -73,6 +74,13 @@ export function LongPlayer({ media, next, onClose, onNext, startAt, continueNext
   const [screenLocked, setScreenLocked] = useState(false);
   const [unlockHint, setUnlockHint] = useState(false);
   const [markers, setMarkers] = useState<number[]>([]);
+  const [fillMode, setFillMode] = useState(false);
+  const [rotated, setRotated] = useState(false);
+  const [loopA, setLoopA] = useState<number | null>(null);
+  const [loopB, setLoopB] = useState<number | null>(null);
+  const [brightness, setBrightness] = useState(1);
+  const [vHud, setVHud] = useState<{ kind: "brightness" | "volume"; value: number } | null>(null);
+  const vDrag = useRef<{ kind: "brightness" | "volume"; startY: number; startVal: number; active: boolean } | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
   const resume = useRef(startAt ?? 0);
   const src = chooseStream(media, prefs.lowRes);
@@ -222,9 +230,40 @@ export function LongPlayer({ media, next, onClose, onNext, startAt, continueNext
     return () => clearTimeout(timer);
   }, [countdown, onNext]);
 
+  const jumpToFraction = (fraction: number) => {
+    const el = video.current;
+    const total = el?.duration || duration;
+    if (!el || !total || !Number.isFinite(total)) return;
+    haptic(8);
+    el.currentTime = Math.max(0, Math.min(total - 1, total * fraction));
+    setTime(el.currentTime);
+  };
+
+  const toggleAB = () => {
+    const el = video.current;
+    if (!el) return;
+    haptic(8);
+    if (loopA === null) {
+      setLoopA(el.currentTime);
+      setLoopB(null);
+      toast(`已设 A 点 (${formatDuration(el.currentTime) || "0:00"})`);
+    } else if (loopB === null) {
+      const a = Math.min(loopA, el.currentTime);
+      const b = Math.max(loopA, el.currentTime);
+      if (b - a < 1) { toast("A-B 间隔至少 1 秒"); return; }
+      setLoopA(a); setLoopB(b);
+      el.currentTime = a;
+      toast(`A-B 循环中 (${formatDuration(a) || "0:00"}–${formatDuration(b)})`);
+    } else {
+      setLoopA(null); setLoopB(null);
+      toast("已关闭 A-B 循环");
+    }
+  };
+
   return (
     <div ref={root} className="fixed inset-0 z-30 bg-black">
-      <video ref={video} src={src} playsInline autoPlay muted={prefs.muted} className="size-full object-contain"
+      <video ref={video} src={src} playsInline autoPlay muted={prefs.muted}
+        className={`size-full transition-transform duration-300 ${fillMode ? "object-cover" : "object-contain"} ${rotated ? "rotate-90 scale-[1.35]" : ""}`}
         onLoadedMetadata={event => {
           setDuration(event.currentTarget.duration);
           if (resume.current) { event.currentTarget.currentTime = resume.current; resume.current = 0; }
@@ -240,14 +279,72 @@ export function LongPlayer({ media, next, onClose, onNext, startAt, continueNext
         onPlay={event => { setPlaying(true); setCountdown(null); setLoading(event.currentTarget.readyState < 3); }}
         onPause={() => { setPlaying(false); setControls(true); setLoading(false); }}
         onEnded={() => { if ((next || continueNext) && onNext) setCountdown(NEXT_IN_SECONDS); }}
-        onTimeUpdate={event => setTime(event.currentTarget.currentTime)} />
+        onTimeUpdate={event => {
+          const t = event.currentTarget.currentTime;
+          if (loopA !== null && loopB !== null && t >= loopB) { event.currentTarget.currentTime = loopA; setTime(loopA); return; }
+          setTime(t);
+        }} />
+
+      {brightness < 1 && (
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-black" style={{ opacity: Math.max(0, Math.min(0.7, 1 - brightness)) }} />
+      )}
 
       <div className="absolute inset-0 touch-none select-none"
-        onPointerDown={event => { horizontal.down(event.clientX, event.clientY); gestures.current?.down(event.clientX, event.clientY, performance.now()); }}
-        onPointerMove={event => { if (horizontal.move(event.clientX, event.clientY)) { event.currentTarget.setPointerCapture?.(event.pointerId); gestures.current?.cancel(); } else gestures.current?.move(event.clientX, event.clientY); if (event.pointerType === "mouse") setControls(true); }}
-        onPointerUp={event => { if (horizontal.up(event.clientX, event.clientY)) gestures.current?.cancel(); else gestures.current?.up(event.clientX, performance.now()); }}
-        onPointerCancel={() => { horizontal.cancel(); gestures.current?.cancel(); }}
+        onPointerDown={event => {
+          horizontal.down(event.clientX, event.clientY);
+          gestures.current?.down(event.clientX, event.clientY, performance.now());
+          if (!screenLocked && event.pointerType !== "mouse") {
+            const w = window.innerWidth || 390;
+            if (event.clientX < w * 0.4) vDrag.current = { kind: "brightness", startY: event.clientY, startVal: brightness, active: false };
+            else if (event.clientX > w * 0.6) vDrag.current = { kind: "volume", startY: event.clientY, startVal: video.current?.volume ?? 1, active: false };
+          }
+        }}
+        onPointerMove={event => {
+          const vd = vDrag.current;
+          if (vd && !screenLocked) {
+            const dy = vd.startY - event.clientY;
+            if (!vd.active && Math.abs(dy) > 18 && horizontal.target === null) {
+              vd.active = true;
+              horizontal.cancel();
+              gestures.current?.cancel();
+            }
+            if (vd.active) {
+              const delta = dy / 220;
+              if (vd.kind === "brightness") {
+                const nextB = Math.max(0.35, Math.min(1, vd.startVal + delta));
+                setBrightness(nextB);
+                setVHud({ kind: "brightness", value: Math.round(nextB * 100) });
+              } else if (video.current) {
+                const nextV = Math.max(0, Math.min(1, vd.startVal + delta));
+                video.current.volume = nextV;
+                if (nextV > 0 && prefs.muted) setPref("muted", false);
+                setVHud({ kind: "volume", value: Math.round(nextV * 100) });
+              }
+              return;
+            }
+          }
+          if (horizontal.move(event.clientX, event.clientY)) { vDrag.current = null; event.currentTarget.setPointerCapture?.(event.pointerId); gestures.current?.cancel(); }
+          else gestures.current?.move(event.clientX, event.clientY);
+          if (event.pointerType === "mouse") setControls(true);
+        }}
+        onPointerUp={event => {
+          if (vDrag.current?.active) { vDrag.current = null; setTimeout(() => setVHud(null), 700); return; }
+          vDrag.current = null;
+          if (horizontal.up(event.clientX, event.clientY)) gestures.current?.cancel();
+          else gestures.current?.up(event.clientX, performance.now());
+        }}
+        onPointerCancel={() => { vDrag.current = null; setVHud(null); horizontal.cancel(); gestures.current?.cancel(); }}
         onContextMenu={event => event.preventDefault()} />
+
+      <AnimatePresence>
+        {vHud && (
+          <motion.div key="vhud" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
+            className="glass-dock pointer-events-none absolute left-1/2 top-1/3 z-20 flex -translate-x-1/2 items-center gap-2.5 rounded-full px-4 py-2 text-[13px] font-semibold tabular-nums text-gold-bright">
+            {vHud.kind === "brightness" ? <SunDimIcon size={18} weight="fill" /> : <SpeakerHighIcon size={18} weight="fill" />}
+            <span>{vHud.kind === "brightness" ? "画面亮度" : "音量"} {vHud.value}%</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <LoadingFeedback video={video} source={src} waiting={loading} enabled={!locked && !failed} />
       <RecoveryNotice {...recovery} compatible={hasLow && !prefs.lowRes ? () => changeQuality(true) : undefined} />
@@ -285,6 +382,10 @@ export function LongPlayer({ media, next, onClose, onNext, startAt, continueNext
               className="pointer-events-auto flex items-center gap-2 px-3.5 pt-[max(0.85rem,env(safe-area-inset-top))] text-white">
               <button type="button" onClick={onClose} aria-label="返回" className="glass-pill pressable grid size-10 shrink-0 place-items-center rounded-full"><CaretLeftIcon size={20} weight="bold" /></button>
               <p className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-0.01em] drop-shadow-[0_1px_8px_rgba(0,0,0,0.7)]">{title}</p>
+              <button type="button" onClick={() => { haptic(8); setFillMode(v => !v); }} aria-label="切换画面比例" title="适应/铺满"
+                className={`glass-pill pressable grid size-10 shrink-0 place-items-center rounded-full ${fillMode ? "border-gold/45 text-gold-bright" : ""}`}><FrameCornersIcon size={18} /></button>
+              <button type="button" onClick={() => { haptic(8); setRotated(v => !v); }} aria-label="旋转画面" title="旋转 90°"
+                className={`glass-pill pressable grid size-10 shrink-0 place-items-center rounded-full ${rotated ? "border-gold/45 text-gold-bright" : ""}`}><DeviceRotateIcon size={18} /></button>
               <button type="button" onClick={() => { haptic(8); setScreenLocked(true); setUnlockHint(true); setControls(false); }} aria-label="锁定屏幕防误触"
                 className="glass-pill pressable grid size-10 shrink-0 place-items-center rounded-full"><LockSimpleIcon size={19} /></button>
               <QuickTagButton media={media} enabled={!locked} />
@@ -294,6 +395,21 @@ export function LongPlayer({ media, next, onClose, onNext, startAt, continueNext
             <motion.div initial={{ y: 20, opacity: 0, scale: 0.98 }} animate={{ y: 0, opacity: 1, scale: 1 }} exit={{ y: 16, opacity: 0 }}
               transition={{ type: "spring", visualDuration: 0.36, bounce: 0.12 }}
               className="pointer-events-auto mx-auto w-full max-w-3xl px-3.5 pb-[max(1rem,env(safe-area-inset-bottom))]">
+              <div className="mb-2 flex items-center justify-between gap-1.5 px-1">
+                <div className="flex items-center gap-1.5">
+                  {([0.2, 0.4, 0.6, 0.8] as const).map(frac => (
+                    <button key={frac} type="button" onClick={() => jumpToFraction(frac)} aria-label={`空降 ${Math.round(frac * 100)}%`}
+                      className="glass-pill pressable rounded-full px-2.5 py-1 text-[11px] font-semibold tabular-nums text-white/85 hover:border-gold/40 hover:text-gold-bright">
+                      {Math.round(frac * 100)}%
+                    </button>
+                  ))}
+                </div>
+                <button type="button" onClick={toggleAB} aria-label="A-B 循环"
+                  className={`pressable inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold ${loopA !== null ? "glass-pill-gold" : "glass-pill text-white/85"}`}>
+                  <RepeatIcon size={13} weight="bold" />
+                  {loopA === null ? "A-B" : loopB === null ? "设 B" : "循环中"}
+                </button>
+              </div>
               <div className="glass-dock rounded-[24px] px-4 pb-3 pt-2">
                 <SeekBar video={video} source={src} mediaId={media.id} duration={duration} enabled={!locked} markers={markers} />
                 <div className="mt-1 flex items-center gap-1.5 text-white">

@@ -1,8 +1,9 @@
-import { ArrowDownIcon, ArrowsClockwiseIcon, CaretLeftIcon, TrashIcon } from "@phosphor-icons/react";
+import { ArrowDownIcon, ArrowsClockwiseIcon, CaretLeftIcon, TimerIcon, TrashIcon } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, chooseStream, Unauthorized, type Media } from "../api";
-import { usePrefs } from "../prefs";
+import { setPref, usePrefs } from "../prefs";
+import { useLocked } from "../ui/privacy";
 import { announce } from "../ui/Grid";
 import { toast } from "../ui/toast";
 import { FeedItem } from "./FeedItem";
@@ -40,6 +41,7 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, onRef
   const pullStart = useRef<number | null>(null);
   const container = useRef<HTMLDivElement>(null);
   const prefs = usePrefs();
+  const locked = useLocked();
   useEffect(() => subscribeMediaChanges(change => setItems(list => "removed" in change
     ? list.filter(item => item.id !== change.id) : list.map(item => item.id === change.id ? { ...item, ...change } : item))), [setItems]);
   const [preloadFor, setPreloadFor] = useState<{ id: string; src: string } | null>(null);
@@ -112,7 +114,16 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, onRef
     }, 6000);
   }, [items, setItems]);
 
-  const next = () => container.current?.scrollBy({ top: container.current.clientHeight, behavior: "smooth" });
+  const next = useCallback(() => container.current?.scrollBy({ top: container.current.clientHeight, behavior: "smooth" }), []);
+
+  // Hands-free auto-swap timer: advances to the next clip automatically when enabled.
+  useEffect(() => {
+    if (!enabled || organize || locked || !prefs.autoSwapSeconds || active >= items.length - 1) return;
+    const timer = setInterval(() => {
+      if (!document.hidden) next();
+    }, prefs.autoSwapSeconds * 1000);
+    return () => clearInterval(timer);
+  }, [enabled, organize, locked, prefs.autoSwapSeconds, active, items.length, next]);
   const [curating, setCurating] = useState(false);
   const complete = async () => {
     if (!current || curating) return;
@@ -203,10 +214,28 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, onRef
 }
 
 /** The home feed: the server's shuffled deck, unwatched first. */
+const SWAP_STEPS = [0, 15, 30, 60] as const;
+
 export function Feed({ onUnauthorized, enabled = true }: { onUnauthorized: () => void; enabled?: boolean }) {
   const [revision, setRevision] = useState(0);
+  const prefs = usePrefs();
   const shuffle = useCallback(() => { setRevision(value => value + 1); toast("已换一批短视频"); }, []);
-  return <><FeedPreferencesButton className="fixed left-3 top-[max(0.75rem,env(safe-area-inset-top))] z-20" onSaved={() => setRevision(value => value + 1)} /><FeedContent key={revision} onUnauthorized={onUnauthorized} enabled={enabled} onRefresh={shuffle} /></>;
+  const cycleSwap = () => {
+    const idx = SWAP_STEPS.indexOf(prefs.autoSwapSeconds as typeof SWAP_STEPS[number]);
+    const nextSec = SWAP_STEPS[(idx + 1) % SWAP_STEPS.length];
+    haptic(8);
+    setPref("autoSwapSeconds", nextSec);
+    toast(nextSec ? `免手轮换：每 ${nextSec} 秒自动下一条` : "已关闭免手自动轮换");
+  };
+  return <>
+    <FeedPreferencesButton className="fixed left-3 top-[max(0.75rem,env(safe-area-inset-top))] z-20" onSaved={() => setRevision(value => value + 1)} />
+    <button type="button" onClick={cycleSwap} aria-label="免手自动轮换" aria-pressed={prefs.autoSwapSeconds > 0}
+      className={`pressable fixed left-[5.6rem] top-[max(0.75rem,env(safe-area-inset-top))] z-20 flex h-10 items-center gap-1 rounded-full px-3 text-[12px] font-semibold ${prefs.autoSwapSeconds > 0 ? "glass-pill-gold" : "glass-pill text-white/90"}`}>
+      <TimerIcon size={15} weight={prefs.autoSwapSeconds > 0 ? "fill" : "bold"} />
+      <span>{prefs.autoSwapSeconds > 0 ? `${prefs.autoSwapSeconds}s` : "自动"}</span>
+    </button>
+    <FeedContent key={revision} onUnauthorized={onUnauthorized} enabled={enabled} onRefresh={shuffle} />
+  </>;
 }
 
 function FeedContent({ onUnauthorized, enabled, onRefresh }: { onUnauthorized: () => void; enabled: boolean; onRefresh: () => void }) {

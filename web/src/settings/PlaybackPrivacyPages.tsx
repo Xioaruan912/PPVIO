@@ -1,8 +1,23 @@
-import { EyeClosedIcon, FilmStripIcon, LightningIcon, ShieldCheckIcon } from "@phosphor-icons/react";
+import { EyeClosedIcon, FilmStripIcon, LightningIcon, ShieldCheckIcon, ShieldWarningIcon } from "@phosphor-icons/react";
 import { api } from "../api";
-import { usePrefs } from "../prefs";
+import { setPref, usePrefs, type PanicDecoy } from "../prefs";
 import { toast } from "../ui/toast";
+import { triggerPanic } from "../ui/privacy";
+import { GlassSelect } from "../ui/Skeleton";
 import { IosSwitch, PrefToggle, SettingsHeader, SettingsSection } from "./shared";
+
+const STEALTH_TITLES = [
+  { value: "", label: "不伪装（PPVIO）" },
+  { value: "备忘录", label: "备忘录" },
+  { value: "文件", label: "文件" },
+  { value: "日历", label: "日历" },
+  { value: "学习笔记", label: "学习笔记" },
+] as const;
+
+const DECOY_MODES = [
+  { value: "notes", label: "备忘录伪装页" },
+  { value: "clock", label: "极简待机时钟" },
+] as const;
 
 export function PlaybackPage({ mode, onModeChange, onBack }: {
   mode: { mode: "webdav" | "direct"; direct_available: boolean } | null;
@@ -63,7 +78,33 @@ export function PrivacyPage({ onBack }: { onBack: () => void }) {
 
       <SettingsSection title="视觉与离开防护">
         <PrefToggle pref="coverBlur" title="封面模糊" hint="片库、标签和历史里的封面默认高斯模糊，点顶部眼睛图标临时显示" />
-        <PrefToggle pref="privacyLock" title="离开时遮住画面" hint="一分钟无操作或切到后台时自动盖住画面并暂停播放；观看长视频时不会触发" />
+        <PrefToggle pref="peekOnHold" title="按住 / 悬停偷看单张封面" hint="模糊模式下长按或鼠标悬停单张卡片临时清晰，松手立即恢复模糊" />
+        <PrefToggle pref="privacyLock" title="离开时遮住画面" hint="一分钟无操作或切到后台时自动切换伪装页并暂停播放" />
+      </SettingsSection>
+
+      <SettingsSection title="防社死伪装与紧急遮屏">
+        <div className="flex items-center justify-between gap-4 px-4 py-3.5">
+          <span>
+            <span className="block text-[15px] font-medium text-ink">标签页标题伪装</span>
+            <span className="mt-0.5 block text-[13px] leading-snug text-muted">替换浏览器标签名与图标，同步脱敏锁屏媒体卡片</span>
+          </span>
+          <GlassSelect label="标签页标题伪装" value={prefs.stealthTitle} options={STEALTH_TITLES}
+            onChange={val => setPref("stealthTitle", val)} className="w-36 shrink-0" />
+        </div>
+        <div className="flex items-center justify-between gap-4 px-4 py-3.5">
+          <span>
+            <span className="block text-[15px] font-medium text-ink">紧急遮屏伪装样式</span>
+            <span className="mt-0.5 block text-[13px] leading-snug text-muted">支持手机双指轻点、电脑 Shift+H 或双击 Esc 秒切</span>
+          </span>
+          <GlassSelect label="紧急遮屏伪装样式" value={prefs.panicDecoy} options={DECOY_MODES}
+            onChange={val => setPref("panicDecoy", val as PanicDecoy)} className="w-36 shrink-0" />
+        </div>
+        <div className="px-4 py-3.5">
+          <button type="button" onClick={triggerPanic}
+            className="ios-card pressable flex h-11 w-full items-center justify-center gap-2 rounded-full text-[14px] font-semibold text-gold-bright hover:border-gold/40">
+            <ShieldWarningIcon size={18} weight="fill" />立即测试紧急伪装遮屏
+          </button>
+        </div>
       </SettingsSection>
     </div>
   );
