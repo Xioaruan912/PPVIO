@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useSyncExternalStore } from "react";
+import { SPRING_PILL } from "./motion";
 
 interface Toast { id: number; text: string; action?: { label: string; run: () => void } }
 
@@ -17,13 +18,23 @@ export function toast(text: string, action?: Toast["action"], ms = 4000): void {
 export function Toasts() {
   const list = useSyncExternalStore(l => { listeners.add(l); return () => listeners.delete(l); }, () => toasts);
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-40 flex flex-col items-center gap-2 px-4" role="status">
-      <AnimatePresence>
+    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(5.9rem+env(safe-area-inset-bottom))] z-40 flex flex-col items-center gap-2 px-4" role="status">
+      <AnimatePresence mode="popLayout">
         {list.map(t => (
-          <motion.div key={t.id} layout initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }}
-            className="pointer-events-auto flex items-center gap-4 rounded-full bg-raised px-4 py-2.5 text-[14px] shadow-lg shadow-black/40">
+          <motion.div key={t.id} layout
+            initial={{ opacity: 0, y: 18, scale: 0.88 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.92 }}
+            transition={SPRING_PILL}
+            className="glass-dock pointer-events-auto flex items-center gap-3.5 rounded-full px-4 py-2.5 text-[14px] font-medium text-ink">
+            <span className="size-1.5 shrink-0 rounded-full bg-gold shadow-[0_0_8px_rgba(230,198,135,0.8)]" aria-hidden="true" />
             <span>{t.text}</span>
-            {t.action && <button className="font-semibold text-accent" onClick={() => { t.action!.run(); toasts = toasts.filter(x => x.id !== t.id); emit(); }}>{t.action.label}</button>}
+            {t.action && (
+              <button type="button" className="pressable rounded-full bg-gold-soft px-3 py-1 text-[13px] font-semibold text-gold-bright"
+                onClick={() => { t.action!.run(); toasts = toasts.filter(x => x.id !== t.id); emit(); }}>
+                {t.action.label}
+              </button>
+            )}
           </motion.div>
         ))}
       </AnimatePresence>

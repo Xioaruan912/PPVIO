@@ -40,8 +40,8 @@ export function LoadingFeedback({ video, source, waiting, enabled }: {
   if (!enabled || !waiting || shownFor !== source) return null;
   return (
     <div role="status" aria-label="视频正在加载"
-      className="pointer-events-none absolute left-1/2 top-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-2 rounded-2xl bg-black/65 px-5 py-4 text-center text-[13px] text-white/90 backdrop-blur-sm">
-      <CircleNotchIcon size={30} aria-hidden="true" className="animate-spin motion-reduce:animate-none" />
+      className="glass-pill pointer-events-none absolute left-1/2 top-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-2 rounded-[22px] px-5 py-4 text-center text-[13px] font-medium text-white/95">
+      <CircleNotchIcon size={28} aria-hidden="true" className="animate-spin text-white/90 motion-reduce:animate-none" />
       <span>正在加载…</span>
       {seconds > 0 && <span aria-live="off" className="whitespace-nowrap tabular-nums text-white/65">已缓冲 {seconds.toFixed(1)} 秒</span>}
     </div>

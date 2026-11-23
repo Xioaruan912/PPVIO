@@ -136,52 +136,76 @@ export function FeedItem({ media, active, mounted, eager = false, onBufferReadin
         onPointerCancel={() => { horizontal.cancel(); recognizer.current?.cancel(); }}
         onContextMenu={event => event.preventDefault()} />
 
+      {/* Subtle top & bottom cinema vignettes so floating glass controls always remain legible */}
+      <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/55 to-transparent" />
+      <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-44 bg-gradient-to-t from-black/72 via-black/28 to-transparent" />
+
       <LoadingFeedback video={video} source={src} waiting={loading}
         enabled={active && mounted && !paused && !locked && visible && !failed && !invalid} />
-      {invalid && active && <div className="absolute inset-x-6 top-1/3 z-10 rounded-xl bg-black/80 p-5 text-center text-white"><p className="mb-3 text-sm">片段位置已超出视频时长</p><button type="button" className="min-h-11 rounded-full bg-accent px-5" onClick={() => { setOriginal(true); setPaused(false); if (video.current) { video.current.currentTime = 0; void video.current.play().catch(() => setPaused(true)); } }}>打开原视频</button></div>}
+      {invalid && active && <div className="glass-sheet absolute inset-x-6 top-1/3 z-10 rounded-[22px] border border-white/[0.14] p-5 text-center text-white"><p className="mb-3 text-sm">片段位置已超出视频时长</p><button type="button" className="pressable min-h-11 rounded-full bg-accent px-5 text-sm font-semibold text-white" onClick={() => { setOriginal(true); setPaused(false); if (video.current) { video.current.currentTime = 0; void video.current.play().catch(() => setPaused(true)); } }}>打开原视频</button></div>}
 
       <AnimatePresence>
         {paused && active && (
-          <motion.span key="paused" className="pointer-events-none absolute left-1/2 top-1/2 -ml-9 -mt-9 grid size-18 place-items-center rounded-full bg-black/40 text-white backdrop-blur-sm"
-            initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 1.1 }}>
-            <PlayIcon size={34} weight="fill" />
+          <motion.span key="paused" className="glass-pill pointer-events-none absolute left-1/2 top-1/2 -ml-10 -mt-10 grid size-20 place-items-center rounded-full border-gold/30 text-gold-bright shadow-[0_12px_36px_rgba(0,0,0,0.55)]"
+            initial={{ opacity: 0, scale: 0.72 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 1.15 }}
+            transition={{ type: "spring", visualDuration: 0.28, bounce: 0.2 }}>
+            <PlayIcon size={34} weight="fill" className="translate-x-0.5" />
           </motion.span>
         )}
         {fast && (
-          <motion.span key="fast" className="pointer-events-none absolute left-1/2 top-[max(1.25rem,env(safe-area-inset-top))] -translate-x-1/2 rounded-full bg-black/55 px-3 py-1 text-[13px] font-semibold text-white backdrop-blur-sm"
-            initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>2× 快进中</motion.span>
+          <motion.span key="fast" className="glass-pill-gold pointer-events-none absolute left-1/2 top-[max(1.1rem,env(safe-area-inset-top))] -translate-x-1/2 rounded-full px-4 py-1.5 text-[13px] font-semibold tracking-tight"
+            initial={{ opacity: 0, y: -12, scale: 0.88 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -6, scale: 0.94 }}
+            transition={{ type: "spring", visualDuration: 0.26, bounce: 0.2 }}>2× 快进中</motion.span>
         )}
         {bursts.map(burst => (
-          <motion.span key={burst.id} className="pointer-events-none absolute text-accent" style={{ left: burst.x - 40, top: burst.y - 40 }}
-            initial={{ scale: 0.4, opacity: 0, rotate: -12 }} animate={{ scale: [0.4, 1.25, 1], opacity: [0, 1, 1, 0], y: -60 }}
-            transition={{ duration: 0.8, ease: "easeOut" }} onAnimationComplete={() => setBursts(list => list.filter(b => b.id !== burst.id))}>
-            <HeartIcon size={80} weight="fill" />
+          <motion.span key={burst.id} className="pointer-events-none absolute" style={{ left: burst.x - 44, top: burst.y - 44 }}
+            initial={{ scale: 0.35, opacity: 0, rotate: -14 }} animate={{ scale: [0.35, 1.32, 1.05], opacity: [0, 1, 1, 0], y: -74 }}
+            transition={{ duration: 0.82, ease: [0.22, 1, 0.36, 1] }} onAnimationComplete={() => setBursts(list => list.filter(b => b.id !== burst.id))}>
+            <motion.span aria-hidden="true" className="absolute inset-1 rounded-full border-2 border-gold-bright/80"
+              initial={{ scale: 0.4, opacity: 0.9 }} animate={{ scale: 2.1, opacity: 0 }} transition={{ duration: 0.55, ease: "easeOut" }} />
+            <HeartIcon size={88} weight="fill" className="text-accent drop-shadow-[0_8px_28px_rgba(255,69,58,0.6)]" />
           </motion.span>
         ))}
       </AnimatePresence>
 
       {enabled && !invalid && <RecoveryNotice {...recovery} compatible={hasLow && !prefs.lowRes ? () => setPref("lowRes", true) : undefined} />}
-      {enabled && horizontal.target !== null && <div className="pointer-events-none absolute inset-x-0 bottom-40"><SeekPreview id={media.id} time={horizontal.target} enabled /></div>}
+      {enabled && horizontal.target !== null && <div className="pointer-events-none absolute inset-x-0 bottom-44"><SeekPreview id={media.id} time={horizontal.target} enabled /></div>}
 
-      <div className={`absolute right-3 flex flex-col items-center gap-5 transition-[bottom] ${raised ? "bottom-[calc(13rem+env(safe-area-inset-bottom))]" : "bottom-[calc(5.5rem+env(safe-area-inset-bottom))]"}`}>
-        <QuickTagButton media={media} enabled={enabled} />
+      {media.groups?.[0]?.label && !raised && (
+        <motion.div
+          animate={active ? { opacity: 1, y: 0 } : { opacity: 0, y: 12 }}
+          transition={{ type: "spring", visualDuration: 0.38, bounce: 0.08 }}
+          className="pointer-events-none absolute bottom-[calc(7.25rem+env(safe-area-inset-bottom))] left-3.5 max-w-[68%]">
+          <div className="glass-pill inline-flex max-w-full items-center gap-2 rounded-full px-3.5 py-1.5 text-[13px] font-medium tracking-[-0.01em] text-ink/95">
+            <span className="size-1.5 shrink-0 rounded-full bg-gold shadow-[0_0_8px_rgba(230,198,135,0.9)]" aria-hidden="true" />
+            <span className="truncate">{media.groups[0].label}</span>
+          </div>
+        </motion.div>
+      )}
+
+      <motion.div
+        animate={active ? { opacity: 1, x: 0 } : { opacity: 0.5, x: 16 }}
+        transition={{ type: "spring", visualDuration: 0.38, bounce: 0.14 }}
+        className={`absolute right-3 flex flex-col items-center gap-3.5 transition-[bottom] duration-300 ease-out ${raised ? "bottom-[calc(18.5rem+env(safe-area-inset-bottom))]" : "bottom-[calc(7rem+env(safe-area-inset-bottom))]"}`}>
+        <QuickTagButton media={media} enabled={enabled} iconOnly />
         <RailButton label={prefs.muted ? "打开声音" : "静音"} onClick={() => setPref("muted", !prefs.muted)}>
-          {prefs.muted ? <SpeakerSlashIcon size={28} weight="fill" /> : <SpeakerHighIcon size={28} weight="fill" />}
+          {prefs.muted ? <SpeakerSlashIcon size={22} weight="fill" /> : <SpeakerHighIcon size={22} weight="fill" className="text-gold-bright" />}
         </RailButton>
         <BookmarkButton media={media} video={video} enabled={enabled} />
-        <RailButton label="更多" onClick={() => setMenu(true)}><DotsThreeIcon size={30} weight="bold" /></RailButton>
+        <RailButton label="更多" onClick={() => setMenu(true)}><DotsThreeIcon size={24} weight="bold" /></RailButton>
         {hasLow && (
-          <button type="button" onClick={() => setPref("lowRes", !prefs.lowRes)} aria-label="切换清晰度"
-            className="rounded-full bg-black/45 px-2.5 py-1 text-[12px] font-semibold text-white backdrop-blur-sm">
+          <motion.button type="button" onClick={() => setPref("lowRes", !prefs.lowRes)} aria-label="切换清晰度"
+            whileHover={{ scale: 1.07 }} whileTap={{ scale: 0.88 }} transition={{ type: "spring", stiffness: 500, damping: 24 }}
+            className="glass-pill rounded-full px-2.5 py-1.5 text-[11px] font-semibold tracking-wide text-gold-bright">
             {prefs.lowRes ? "低清" : "原画"}
-          </button>
+          </motion.button>
         )}
-      </div>
+      </motion.div>
 
       <MediaActions media={media} open={menu} onClose={() => setMenu(false)} onRemove={onRemove} video={video} />
       <Sheet open={quickTags && enabled} onClose={() => setQuickTags(false)} title="标签收藏"><QuickTagPanel media={media} onDone={() => setQuickTags(false)} /></Sheet>
 
-      <div className="absolute inset-x-0 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] px-3">
+      <div className="absolute inset-x-0 bottom-[calc(4.9rem+env(safe-area-inset-bottom))] px-3.5">
         <SeekBar video={video} source={src} mediaId={media.id} enabled={enabled && !invalid} duration={media.duration_seconds ?? 0} bounds={range} />
       </div>
     </section>
@@ -190,8 +214,10 @@ export function FeedItem({ media, active, mounted, eager = false, onBufferReadin
 
 function RailButton({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
   return (
-    <motion.button type="button" aria-label={label} title={label} onClick={onClick} whileTap={{ scale: 0.85 }}
-      className="grid size-12 place-items-center rounded-full text-white drop-shadow-[0_1px_6px_rgb(0_0_0/0.5)]">
+    <motion.button type="button" aria-label={label} title={label} onClick={onClick}
+      whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.82 }}
+      transition={{ type: "spring", stiffness: 520, damping: 24 }}
+      className="glass-pill grid size-11 place-items-center rounded-full text-white hover:border-gold/35">
       {children}
     </motion.button>
   );

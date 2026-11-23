@@ -55,7 +55,10 @@ export function BookmarkButton({ media, video, enabled }: { media: Media; video:
     finally { if (alive.current) setBusy(false); }
   };
   return <>
-    <button type="button" aria-label="片内书签" disabled={!enabled} onClick={() => setOpen(true)} className="grid size-11 place-items-center rounded-full text-white disabled:opacity-40"><BookmarkSimpleIcon size={26} /></button>
+    <button type="button" aria-label="片内书签" title="片内书签" disabled={!enabled} onClick={() => setOpen(true)}
+      className="glass-pill pressable grid size-11 place-items-center rounded-full text-white disabled:opacity-40">
+      <BookmarkSimpleIcon size={22} weight="fill" />
+    </button>
     <Sheet open={open && enabled && !locked} onClose={() => setOpen(false)} title={editing ? "编辑片段" : "片内书签"}>
       {editing ? <BookmarkEditor bookmark={editing} onSaved={updated => setItems(list => list.map(item => item.id === updated.id ? updated : item))} onClose={() => setEditing(null)} /> : <>
       <div className="mb-3 flex gap-2 px-2"><input aria-label="书签备注" placeholder="备注（可选）" maxLength={40} value={name} onChange={event => setName(event.target.value)} className="min-w-0 flex-1 rounded-lg bg-bg px-3 text-sm" />

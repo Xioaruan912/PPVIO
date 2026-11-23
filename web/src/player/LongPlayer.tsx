@@ -237,69 +237,83 @@ export function LongPlayer({ media, next, onClose, onNext, startAt, continueNext
 
       <AnimatePresence>
         {jump && (
-          <motion.span key={jump} className={`pointer-events-none absolute top-1/2 -mt-8 grid size-16 place-items-center rounded-full bg-black/45 text-white ${jump === "forward" ? "right-[18%]" : "left-[18%]"}`}
-            initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
-            {jump === "forward" ? <ArrowClockwiseIcon size={28} /> : <ArrowCounterClockwiseIcon size={28} />}
+          <motion.span key={jump} className={`glass-pill pointer-events-none absolute top-1/2 -mt-9 grid size-18 place-items-center rounded-full border-gold/30 text-gold-bright ${jump === "forward" ? "right-[16%]" : "left-[16%]"}`}
+            initial={{ opacity: 0, scale: 0.68, rotate: jump === "forward" ? -28 : 28 }}
+            animate={{ opacity: 1, scale: 1, rotate: 0 }}
+            exit={{ opacity: 0, scale: 1.12 }}
+            transition={{ type: "spring", visualDuration: 0.3, bounce: 0.22 }}>
+            {jump === "forward" ? <ArrowClockwiseIcon size={28} weight="bold" /> : <ArrowCounterClockwiseIcon size={28} weight="bold" />}
           </motion.span>
         )}
         {fast && (
-          <motion.span key="fast" className="pointer-events-none absolute left-1/2 top-[max(1.25rem,env(safe-area-inset-top))] -translate-x-1/2 rounded-full bg-black/55 px-3 py-1 text-[13px] font-semibold text-white backdrop-blur-sm"
-            initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>2× 快进中</motion.span>
+          <motion.span key="fast" className="glass-pill-gold pointer-events-none absolute left-1/2 top-[max(1.1rem,env(safe-area-inset-top))] -translate-x-1/2 rounded-full px-4 py-1.5 text-[13px] font-semibold tracking-tight"
+            initial={{ opacity: 0, y: -12, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -6 }}
+            transition={{ type: "spring", visualDuration: 0.26, bounce: 0.2 }}>2× 快进中</motion.span>
         )}
         {controls && !fast && (
-          <motion.div key="controls" className="pointer-events-none absolute inset-0 flex flex-col justify-between bg-gradient-to-b from-black/60 via-transparent to-black/70"
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <div className="pointer-events-auto flex items-center gap-1 px-3 pt-[max(0.75rem,env(safe-area-inset-top))] text-white">
-              <button type="button" onClick={onClose} aria-label="返回" className="grid size-10 shrink-0 place-items-center rounded-full"><CaretLeftIcon size={24} weight="bold" /></button>
-              <p className="min-w-0 flex-1 truncate text-[15px] font-medium">{title}</p>
+          <motion.div key="controls" className="pointer-events-none absolute inset-0 flex flex-col justify-between bg-gradient-to-b from-black/68 via-transparent to-black/82"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}>
+            <motion.div initial={{ y: -16, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -12, opacity: 0 }}
+              transition={{ type: "spring", visualDuration: 0.34, bounce: 0.1 }}
+              className="pointer-events-auto flex items-center gap-2 px-3.5 pt-[max(0.85rem,env(safe-area-inset-top))] text-white">
+              <button type="button" onClick={onClose} aria-label="返回" className="glass-pill pressable grid size-10 shrink-0 place-items-center rounded-full"><CaretLeftIcon size={20} weight="bold" /></button>
+              <p className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-0.01em] drop-shadow-[0_1px_8px_rgba(0,0,0,0.7)]">{title}</p>
               <QuickTagButton media={media} enabled={!locked} />
               <BookmarkButton media={media} video={video} enabled={!locked} />
-              <button type="button" onClick={() => setMenu(true)} aria-label="更多" className="grid size-10 place-items-center rounded-full"><DotsThreeIcon size={26} weight="bold" /></button>
-            </div>
-            <div className="pointer-events-auto px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-              <SeekBar video={video} source={src} mediaId={media.id} duration={duration} enabled={!locked} />
-              <div className="mt-1 flex items-center gap-1 text-white">
-                <button type="button" onClick={toggle} aria-label={playing ? "暂停" : "播放"} className="grid size-10 place-items-center">
-                  {playing ? <PauseIcon size={26} weight="fill" /> : <PlayIcon size={26} weight="fill" />}
-                </button>
-                <button type="button" onClick={() => jumpBy(false)} aria-label="后退 10 秒" className="hidden size-10 place-items-center sm:grid"><ArrowCounterClockwiseIcon size={22} /></button>
-                <button type="button" onClick={() => jumpBy(true)} aria-label="前进 10 秒" className="hidden size-10 place-items-center sm:grid"><ArrowClockwiseIcon size={22} /></button>
-                <span className="ml-1 whitespace-nowrap text-[13px] tabular-nums text-white/85">{formatDuration(time) || "0:00"} / {formatDuration(duration)}</span>
-                <span className="flex-1" />
-                <button type="button" onClick={toggleMute} aria-label={prefs.muted ? "打开声音" : "静音"} className="grid size-10 place-items-center">
-                  {prefs.muted ? <SpeakerSlashIcon size={22} /> : <SpeakerHighIcon size={22} />}
-                </button>
-                <button type="button" className="rounded-full bg-white/15 px-2.5 py-1 text-[13px] font-semibold"
-                  onClick={() => { const next = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; setSpeed(next); if (video.current) video.current.playbackRate = next; }}>
-                  {speed}×
-                </button>
-                {hasLow && (
-                  <button type="button" className="ml-1 shrink-0 whitespace-nowrap rounded-full bg-white/15 px-2.5 py-1 text-[13px] font-semibold"
-                    onClick={() => changeQuality(!prefs.lowRes)}>
-                    {prefs.lowRes ? "低清" : "原画"}
+              <button type="button" onClick={() => setMenu(true)} aria-label="更多" className="glass-pill pressable grid size-10 shrink-0 place-items-center rounded-full"><DotsThreeIcon size={24} weight="bold" /></button>
+            </motion.div>
+            <motion.div initial={{ y: 20, opacity: 0, scale: 0.98 }} animate={{ y: 0, opacity: 1, scale: 1 }} exit={{ y: 16, opacity: 0 }}
+              transition={{ type: "spring", visualDuration: 0.36, bounce: 0.12 }}
+              className="pointer-events-auto mx-auto w-full max-w-3xl px-3.5 pb-[max(1rem,env(safe-area-inset-bottom))]">
+              <div className="glass-dock rounded-[24px] px-4 pb-3 pt-2">
+                <SeekBar video={video} source={src} mediaId={media.id} duration={duration} enabled={!locked} />
+                <div className="mt-1 flex items-center gap-1.5 text-white">
+                  <motion.button type="button" onClick={toggle} aria-label={playing ? "暂停" : "播放"}
+                    whileTap={{ scale: 0.86 }} transition={{ type: "spring", stiffness: 520, damping: 24 }}
+                    className="glass-pill-gold grid size-10 shrink-0 place-items-center rounded-full">
+                    {playing ? <PauseIcon size={19} weight="fill" /> : <PlayIcon size={19} weight="fill" className="translate-x-0.5" />}
+                  </motion.button>
+                  <button type="button" onClick={() => jumpBy(false)} aria-label="后退 10 秒" className="pressable hidden size-10 place-items-center rounded-full hover:bg-white/10 sm:grid"><ArrowCounterClockwiseIcon size={20} /></button>
+                  <button type="button" onClick={() => jumpBy(true)} aria-label="前进 10 秒" className="pressable hidden size-10 place-items-center rounded-full hover:bg-white/10 sm:grid"><ArrowClockwiseIcon size={20} /></button>
+                  <span className="ml-1.5 whitespace-nowrap text-[13px] font-medium tabular-nums text-white/90">{formatDuration(time) || "0:00"} <span className="text-white/45">/</span> {formatDuration(duration)}</span>
+                  <span className="flex-1" />
+                  <button type="button" onClick={toggleMute} aria-label={prefs.muted ? "打开声音" : "静音"} className="pressable grid size-10 place-items-center rounded-full hover:bg-white/10">
+                    {prefs.muted ? <SpeakerSlashIcon size={20} /> : <SpeakerHighIcon size={20} className="text-gold-bright" />}
                   </button>
-                )}
-                {pip && <button type="button" onClick={() => void pictureInPicture()} aria-label="画中画" className="grid size-10 place-items-center"><PictureInPictureIcon size={22} /></button>}
-                <button type="button" onClick={() => void fullscreen()} aria-label="全屏" className="grid size-10 place-items-center"><CornersOutIcon size={22} /></button>
+                  <button type="button" className="glass-pill pressable rounded-full px-2.5 py-1 text-[12px] font-semibold tabular-nums text-gold-bright"
+                    onClick={() => { const next = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; setSpeed(next); if (video.current) video.current.playbackRate = next; }}>
+                    {speed}×
+                  </button>
+                  {hasLow && (
+                    <button type="button" className="glass-pill pressable shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[12px] font-semibold"
+                      onClick={() => changeQuality(!prefs.lowRes)}>
+                      {prefs.lowRes ? "低清" : "原画"}
+                    </button>
+                  )}
+                  {pip && <button type="button" onClick={() => void pictureInPicture()} aria-label="画中画" className="pressable grid size-10 place-items-center rounded-full hover:bg-white/10"><PictureInPictureIcon size={20} /></button>}
+                  <button type="button" onClick={() => void fullscreen()} aria-label="全屏" className="pressable grid size-10 place-items-center rounded-full hover:bg-white/10"><CornersOutIcon size={20} /></button>
+                </div>
               </div>
-            </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
 
       {countdown !== null && (next || continueNext) && (
-        <div className="absolute bottom-[calc(6.5rem+env(safe-area-inset-bottom))] right-4 z-10 flex w-72 max-w-[calc(100%-2rem)] gap-3 rounded-[14px] bg-black/75 p-2.5 text-white backdrop-blur-md" role="status">
-          <div className="relative aspect-video w-24 shrink-0 overflow-hidden rounded-[8px] bg-surface">
+        <motion.div initial={{ opacity: 0, y: 18, scale: 0.94 }} animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ type: "spring", visualDuration: 0.34, bounce: 0.14 }}
+          className="glass-dock absolute bottom-[calc(7.2rem+env(safe-area-inset-bottom))] right-4 z-10 flex w-76 max-w-[calc(100%-2rem)] gap-3 rounded-[22px] p-3 text-white" role="status">
+          <div className="relative aspect-video w-24 shrink-0 overflow-hidden rounded-[12px] bg-surface ring-1 ring-white/12">
             {next?.cover_url && <Cover src={next.cover_url} className={`size-full object-cover ${prefs.coverBlur ? "blur-md" : ""}`} />}
           </div>
           <div className="flex min-w-0 flex-1 flex-col justify-between">
-            <p className="text-[13px] text-white/80">{countdown} 秒后播放下一个</p>
+            <p className="text-[13px] font-medium text-gold-bright">{countdown} 秒后播放下一个</p>
             <div className="flex gap-2">
-              <button type="button" onClick={() => onNext?.()} className="whitespace-nowrap rounded-full bg-accent px-3 py-1 text-[13px] font-semibold">立即播放</button>
-              <button type="button" onClick={() => setCountdown(null)} className="whitespace-nowrap rounded-full bg-white/15 px-3 py-1 text-[13px]">取消</button>
+              <button type="button" onClick={() => onNext?.()} className="glass-pill-gold pressable whitespace-nowrap rounded-full px-3 py-1 text-[12px] font-semibold">立即播放</button>
+              <button type="button" onClick={() => setCountdown(null)} className="pressable whitespace-nowrap rounded-full bg-white/14 px-3 py-1 text-[12px] font-medium">取消</button>
             </div>
           </div>
-        </div>
+        </motion.div>
       )}
 
       <MediaActions media={media} open={menu} onClose={() => setMenu(false)} onRemove={media.deletable ? () => void remove() : undefined} video={video} />

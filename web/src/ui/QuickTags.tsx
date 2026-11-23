@@ -1,11 +1,11 @@
-import { TagIcon } from "@phosphor-icons/react";
+import { CheckIcon, MagnifyingGlassIcon, TagIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import { api, type Media, type Tag } from "../api";
 import { Sheet } from "./Sheet";
 import { useLocked } from "./privacy";
 
 const RECENT_KEY = "ppvio:quick-tags:v1";
-const action = "min-h-11 rounded-full bg-raised px-4 text-sm disabled:opacity-50";
+const action = "ios-card pressable min-h-10 rounded-full px-4 text-sm font-medium text-ink disabled:opacity-50";
 
 function useVisible(): boolean {
   const locked = useLocked(), [visible, setVisible] = useState(() => !document.hidden);
@@ -30,30 +30,36 @@ function recentTags(tags: Tag[]): number[] {
   remember(ids); return ids;
 }
 
-export function QuickTagButton({ media, onSaved, enabled = true }: {
-  media: Media; onSaved?: () => void; enabled?: boolean;
+export function QuickTagButton({ media, onSaved, enabled = true, iconOnly = false }: {
+  media: Media; onSaved?: () => void; enabled?: boolean; iconOnly?: boolean;
 }) {
   const visible = useVisible(), [openedId, setOpenedId] = useState<string | null>(null);
   useEffect(() => { setOpenedId(null); }, [media.id, enabled, visible]);
   const open = openedId === media.id && visible && enabled;
   return <>
-    <button type="button" aria-label="标签收藏" disabled={!enabled || !visible} onClick={() => setOpenedId(media.id)}
-      className="flex min-h-11 items-center justify-center gap-2 rounded-full bg-raised px-3 text-sm disabled:opacity-50"><TagIcon size={20} />标签收藏</button>
+    <button type="button" aria-label="标签收藏" title="标签收藏" disabled={!enabled || !visible} onClick={() => setOpenedId(media.id)}
+      className={iconOnly
+        ? "glass-pill pressable grid size-11 place-items-center rounded-full text-white hover:border-gold/35 disabled:opacity-45"
+        : "glass-pill pressable flex min-h-10 items-center justify-center gap-1.5 rounded-full px-3 text-[13px] font-medium text-white disabled:opacity-45"}>
+      <TagIcon size={iconOnly ? 22 : 18} weight={iconOnly ? "fill" : "regular"} />{!iconOnly && "标签收藏"}
+    </button>
     {open && <Sheet open onClose={() => setOpenedId(null)} title="标签收藏">
       <TagPanel key={media.id} media={media} onSaved={onSaved} onDone={() => setOpenedId(null)} />
     </Sheet>}
   </>;
 }
 
-export function QuickTagPanel({ media, onDone, compact = false, doneLabel = "完成选择", finishing = false }: {
+export function QuickTagPanel({ media, onDone, compact = false, doneLabel = "完成选择", finishing = false, headerMeta, footerLeft }: {
   media: Media; onDone?: () => void; compact?: boolean; doneLabel?: string; finishing?: boolean;
+  headerMeta?: React.ReactNode; footerLeft?: React.ReactNode;
 }) {
   const visible = useVisible();
-  return visible ? <TagPanel key={media.id} media={media} onDone={onDone} compact={compact} doneLabel={doneLabel} finishing={finishing} /> : null;
+  return visible ? <TagPanel key={media.id} media={media} onDone={onDone} compact={compact} doneLabel={doneLabel} finishing={finishing} headerMeta={headerMeta} footerLeft={footerLeft} /> : null;
 }
 
-function TagPanel({ media, onDone, onSaved, compact = false, doneLabel = "完成选择", finishing = false }: {
+function TagPanel({ media, onDone, onSaved, compact = false, doneLabel = "完成选择", finishing = false, headerMeta, footerLeft }: {
   media: Media; onDone?: () => void; onSaved?: () => void; compact?: boolean; doneLabel?: string; finishing?: boolean;
+  headerMeta?: React.ReactNode; footerLeft?: React.ReactNode;
 }) {
   const [tags, setTags] = useState<Tag[]>([]), [selected, setSelected] = useState<number[]>([]);
   const [recent, setRecent] = useState<number[]>([]), [query, setQuery] = useState("");
@@ -113,28 +119,54 @@ function TagPanel({ media, onDone, onSaved, compact = false, doneLabel = "完成
     : [{ title: "最近 / 常用", items: preferred.map(id => tags.find(tag => tag.id === id)!).filter(Boolean) },
       { title: "全部标签", items: tags.filter(tag => !preferred.includes(tag.id)) }];
 
-  return <section aria-label="快捷标签选择" aria-busy={loading} className={`${compact ? "p-3" : "px-3 pb-2"} min-w-0 space-y-3`}>
-    <p className="text-xs leading-relaxed text-muted">点选即保存，可同时收藏到多个标签。</p>
-    <input type="search" aria-label="搜索标签" value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索标签"
-      className="min-h-11 w-full min-w-0 rounded-lg bg-bg px-3 text-sm" />
-    {loading ? <p role="status" className="py-4 text-center text-sm text-muted">正在读取标签…</p>
+  return <section aria-label="快捷标签选择" aria-busy={loading} className={`${compact ? "p-3" : "px-3 pb-2"} min-w-0 space-y-2.5`}>
+    {compact ? (
+      <div className="flex items-center gap-2">
+        {headerMeta}
+        <div className="relative min-w-0 flex-1">
+          <MagnifyingGlassIcon size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gold/75" />
+          <input type="search" aria-label="搜索标签" value={query} onChange={event => setQuery(event.target.value)} placeholder="筛选标签"
+            className="h-9 w-full min-w-0 rounded-full border border-white/[0.1] bg-black/45 pl-8.5 pr-3 text-[13px] text-ink placeholder:text-faint outline-none focus:border-gold/50" />
+        </div>
+      </div>
+    ) : (
+      <>
+        <p className="text-xs leading-relaxed text-muted">点选即保存，可同时收藏到多个标签。</p>
+        <div className="relative">
+          <MagnifyingGlassIcon size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-gold/75" />
+          <input type="search" aria-label="搜索标签" value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索标签"
+            className="min-h-11 w-full min-w-0 rounded-[14px] border border-line bg-bg/90 pl-10 pr-3 text-sm text-ink placeholder:text-faint outline-none focus:border-gold/50" />
+        </div>
+      </>
+    )}
+
+    {loading ? <p role="status" className="py-3 text-center text-[13px] text-muted">正在读取标签…</p>
       : failed ? <div role="alert" className="text-sm text-accent"><button type="button" aria-label="重试读取标签" onClick={() => void load()} className={action}>标签读取失败，点击重试</button></div>
-        : !tags.length ? <p className="py-4 text-center text-sm text-muted">暂无标签，请在标签管理中创建。</p>
-          : <div className={`${compact ? "max-h-44" : "max-h-72"} space-y-3 overflow-y-auto`}>
-            {groups.map(group => group.items.length > 0 && <fieldset key={group.title} className="min-w-0"><legend className="mb-1 text-xs text-muted">{group.title}</legend>
+        : !tags.length ? <p className="py-3 text-center text-[13px] text-muted">暂无标签，请在标签管理中创建。</p>
+          : <div className={`${compact ? "max-h-28" : "max-h-72"} space-y-2 overflow-y-auto [scrollbar-width:none]`}>
+            {groups.map(group => group.items.length > 0 && <fieldset key={group.title} className="min-w-0">
+              {!compact && <legend className="mb-1.5 text-xs font-medium text-muted">{group.title}</legend>}
               <div className="flex flex-wrap gap-1.5">{group.items.map(tag => {
                 const checked = selected.includes(tag.id), pending = busy.has(tag.id);
-                return <label key={tag.id} className={`flex min-h-11 max-w-full items-center gap-2 rounded-lg px-3 text-sm ${checked ? "bg-accent/15 text-ink" : "bg-bg"} ${pending ? "opacity-60" : ""}`}>
+                return <label key={tag.id}
+                  className={`pressable inline-flex cursor-pointer items-center gap-1.5 rounded-full border transition-all ${compact ? "min-h-9 px-3 text-[13px]" : "min-h-10 px-3.5 text-sm"} max-w-full ${checked ? "border-gold/55 bg-gold/20 font-medium text-gold-bright shadow-[0_0_14px_rgba(230,198,135,0.16)]" : "border-white/[0.1] bg-white/[0.05] text-ink/85 hover:border-white/[0.2]"} ${pending ? "opacity-60" : ""}`}>
                   <input type="checkbox" aria-label={`标签 ${tag.name}`} aria-busy={pending} checked={checked} disabled={pending || finishing}
-                    onChange={event => void setTag(tag, event.target.checked)} className="shrink-0 accent-accent" />
-                  <span className="min-w-0 break-words">{tag.name}</span>{pending && <span className="shrink-0 text-xs text-muted">保存中</span>}
+                    onChange={event => void setTag(tag, event.target.checked)} className="sr-only" />
+                  {checked && <CheckIcon size={13} weight="bold" className="shrink-0 text-gold-bright" />}
+                  <span className="min-w-0 break-words">{tag.name}</span>
+                  {pending && <span className="shrink-0 text-[11px] text-muted">保存中</span>}
                 </label>;
               })}</div>
             </fieldset>)}
-            {search && !groups[0].items.length && <p className="py-4 text-center text-sm text-muted">没有匹配的标签</p>}
+            {search && !groups[0].items.length && <p className="py-3 text-center text-[13px] text-muted">没有匹配的标签</p>}
           </div>}
-    {Object.values(errors).map(error => <p key={error} role="alert" className="text-sm text-accent">{error}</p>)}
-    {onDone && <button type="button" aria-label={doneLabel} disabled={finishing || loading || failed || busy.size > 0 || Object.keys(errors).length > 0} onClick={onDone}
-      className="min-h-11 w-full rounded-full bg-accent px-4 text-sm font-medium text-white disabled:opacity-50">{doneLabel}</button>}
+    {Object.values(errors).map(error => <p key={error} role="alert" className="text-xs text-accent">{error}</p>)}
+    {onDone && (
+      <div className="flex items-center gap-2 pt-0.5">
+        {footerLeft}
+        <button type="button" aria-label={doneLabel} disabled={finishing || loading || failed || busy.size > 0 || Object.keys(errors).length > 0} onClick={onDone}
+          className="glass-pill-gold pressable min-h-11 flex-1 rounded-full px-4 text-[14px] font-semibold disabled:opacity-45 disabled:shadow-none">{doneLabel}</button>
+      </div>
+    )}
   </section>;
 }

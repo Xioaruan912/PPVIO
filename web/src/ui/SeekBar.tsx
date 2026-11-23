@@ -31,10 +31,18 @@ export function SeekBar({ video, source, mediaId, enabled = true, duration: fall
     else { const s = createSeekSession(video.current, () => {}, bounds ?? undefined); s.commit(value); }
   };
   const value = target ?? time;
+  const scrubbing = target !== null;
   const minimum = bounds?.start ?? 0, maximum = bounds?.end ?? duration;
   const percent = (at: number) => maximum > minimum ? Math.max(0, Math.min(100, (at - minimum) / (maximum - minimum) * 100)) : 0;
-  return <div className="relative h-9 w-full touch-none" onClick={event => event.stopPropagation()}>
-    <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 overflow-hidden rounded-full bg-white/25"><div className="absolute inset-y-0 left-0 bg-white/35" style={{ width: `${percent(bufferEnd)}%` }} /><div className="relative h-full bg-white" style={{ width: `${percent(value)}%` }} /></div>
+  const pct = percent(value);
+  return <div className="group relative h-9 w-full touch-none" onClick={event => event.stopPropagation()}>
+    <div className={`absolute inset-x-0 top-1/2 -translate-y-1/2 overflow-hidden rounded-full bg-white/20 transition-[height] duration-200 ease-out ${scrubbing ? "h-2.5 shadow-[0_0_16px_rgba(230,198,135,0.28)]" : "h-[3.5px] group-hover:h-1.5"}`}>
+      <div className="absolute inset-y-0 left-0 rounded-full bg-white/32 transition-[width] duration-150" style={{ width: `${percent(bufferEnd)}%` }} />
+      <div className={`relative h-full rounded-full transition-colors duration-150 ${scrubbing ? "bg-gradient-to-r from-gold via-gold-bright to-white" : "bg-gradient-to-r from-white/90 to-gold-bright"}`} style={{ width: `${pct}%` }} />
+    </div>
+    <span aria-hidden="true"
+      className={`pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-gold-bright shadow-[0_0_14px_rgba(246,223,168,0.85),0_2px_8px_rgba(0,0,0,0.5)] transition-[transform,opacity] duration-150 ${scrubbing ? "size-4 scale-100 opacity-100" : "size-2.5 scale-75 opacity-0 group-hover:scale-100 group-hover:opacity-100"}`}
+      style={{ left: `${pct}%` }} />
     <input type="range" aria-label="播放进度" aria-valuetext={`${Math.floor(value)} 秒`} min={minimum} max={maximum || 0} step={0.1} value={Math.max(minimum, Math.min(value, maximum || 0))} disabled={!enabled || maximum <= minimum}
       onPointerDown={event => { if (!enabled || !video.current) return; event.currentTarget.setPointerCapture?.(event.pointerId); targetRef.current = Number(event.currentTarget.value); session.current = createSeekSession(video.current, setTarget, bounds ?? undefined); setTarget(targetRef.current); }}
       onInput={event => change(Number(event.currentTarget.value))}
@@ -42,6 +50,6 @@ export function SeekBar({ video, source, mediaId, enabled = true, duration: fall
       onPointerUp={() => { session.current?.commit(targetRef.current); session.current = null; setTime(video.current?.currentTime ?? 0); setTarget(null); }}
       onPointerCancel={() => { session.current?.cancel(); session.current = null; setTarget(null); }}
       className="absolute inset-0 h-full w-full cursor-pointer opacity-0" />
-    <SeekPreview id={mediaId} time={value} enabled={enabled && target !== null} />
+    <SeekPreview id={mediaId} time={value} enabled={enabled && scrubbing} />
   </div>;
 }

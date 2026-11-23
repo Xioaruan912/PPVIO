@@ -1,4 +1,5 @@
 import { ArrowDownIcon, CaretLeftIcon, TrashIcon } from "@phosphor-icons/react";
+import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, chooseStream, Unauthorized, type Media } from "../api";
 import { usePrefs } from "../prefs";
@@ -10,6 +11,7 @@ import { curationApi } from "../curationApi";
 import { FeedPreferencesButton } from "../ui/FeedPreferences";
 import { QuickTagPanel } from "../ui/QuickTags";
 import { subscribeMediaChanges } from "../ui/Grid";
+import { SPRING_SHEET } from "../ui/motion";
 
 /** Append new clips, never one already in the list. */
 export function mergeFeed(current: Media[], incoming: Media[]): Media[] {
@@ -122,19 +124,49 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, organ
 
   return (
     <div ref={container} className="h-dvh snap-y snap-mandatory overflow-y-scroll [scrollbar-width:none]">
-      {organize && current && (
-        <div className="fixed inset-x-0 bottom-[calc(5.25rem+env(safe-area-inset-bottom))] z-20 mx-auto flex max-w-md flex-col gap-2 px-3">
-          <div className="max-h-[35dvh] overflow-y-auto rounded-2xl bg-black/80 p-2 text-white backdrop-blur-md"><QuickTagPanel key={current.id} media={current} compact onDone={() => void complete()} doneLabel={curating ? "保存整理中…" : "完成下一条"} finishing={curating} /></div>
-          <div className="grid grid-cols-2 gap-2">
-            <OrganizeButton label="删除" disabled={!current.deletable} onClick={() => void remove(current)}><TrashIcon size={22} /></OrganizeButton>
-            <OrganizeButton label="跳过" onClick={next}><ArrowDownIcon size={22} /></OrganizeButton>
-          </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {organize && current && (
+          <motion.div key="organize-dock"
+            initial={{ opacity: 0, y: 28, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 24, scale: 0.96 }}
+            transition={SPRING_SHEET}
+            className="fixed inset-x-0 bottom-[calc(5.6rem+env(safe-area-inset-bottom))] z-20 mx-auto max-w-md px-3">
+            <div className="glass-dock overflow-hidden rounded-[24px] text-white">
+              <QuickTagPanel
+                key={current.id}
+                media={current}
+                compact
+                onDone={() => void complete()}
+                doneLabel={curating ? "保存整理中…" : "完成下一条"}
+                finishing={curating}
+                headerMeta={
+                  <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-gold/30 bg-gold/14 px-2.5 py-1 text-[12px] font-semibold tabular-nums text-gold-bright">
+                    <span className="size-1.5 rounded-full bg-gold" aria-hidden="true" />
+                    {active + 1}/{items.length}
+                  </span>
+                }
+                footerLeft={
+                  <>
+                    <button type="button" aria-label="删除" disabled={!current.deletable} onClick={() => void remove(current)}
+                      className="pressable flex min-h-11 shrink-0 items-center justify-center gap-1 rounded-full border border-accent/35 bg-accent/15 px-3.5 text-[13px] font-semibold text-accent disabled:opacity-35">
+                      <TrashIcon size={17} weight="bold" />删除
+                    </button>
+                    <button type="button" aria-label="跳过" onClick={next}
+                      className="glass-pill pressable flex min-h-11 shrink-0 items-center justify-center gap-1 rounded-full px-3.5 text-[13px] font-medium text-ink">
+                      <ArrowDownIcon size={17} weight="bold" />跳过
+                    </button>
+                  </>
+                }
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {onClose && (
         <button type="button" onClick={onClose} aria-label="返回"
-          className="fixed left-3 top-[max(0.75rem,env(safe-area-inset-top))] z-20 grid size-10 place-items-center rounded-full bg-black/45 text-white backdrop-blur-sm">
-          <CaretLeftIcon size={22} weight="bold" />
+          className="glass-pill pressable fixed left-3 top-[max(0.75rem,env(safe-area-inset-top))] z-20 grid size-10 place-items-center rounded-full text-white">
+          <CaretLeftIcon size={20} weight="bold" />
         </button>
       )}
       {items.map((item, index) => (
@@ -149,20 +181,9 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, organ
 }
 
 /** The home feed: the server's shuffled deck, unwatched first. */
-function OrganizeButton({ label, accent, disabled, onClick, children }: {
-  label: string; accent?: boolean; disabled?: boolean; onClick: () => void; children: React.ReactNode;
-}) {
-  return (
-    <button type="button" onClick={onClick} disabled={disabled}
-      className={`flex h-12 items-center justify-center gap-2 rounded-full text-[15px] font-semibold backdrop-blur-md transition active:scale-95 disabled:opacity-40 ${accent ? "bg-accent text-white" : "bg-black/55 text-white"}`}>
-      {children}{label}
-    </button>
-  );
-}
-
 export function Feed({ onUnauthorized, enabled = true }: { onUnauthorized: () => void; enabled?: boolean }) {
   const [revision, setRevision] = useState(0);
-  return <><div className="fixed left-3 top-[max(0.75rem,env(safe-area-inset-top))] z-20"><FeedPreferencesButton onSaved={() => setRevision(value => value + 1)} /></div><FeedContent key={revision} onUnauthorized={onUnauthorized} enabled={enabled} /></>;
+  return <><FeedPreferencesButton className="fixed left-3 top-[max(0.75rem,env(safe-area-inset-top))] z-20" onSaved={() => setRevision(value => value + 1)} /><FeedContent key={revision} onUnauthorized={onUnauthorized} enabled={enabled} /></>;
 }
 
 function FeedContent({ onUnauthorized, enabled }: { onUnauthorized: () => void; enabled: boolean }) {
@@ -198,7 +219,7 @@ function FeedContent({ onUnauthorized, enabled }: { onUnauthorized: () => void; 
   return (
     <>
       <button type="button" onClick={() => setOrganize(value => !value)} aria-pressed={organize}
-        className={`fixed right-3 top-[max(0.75rem,env(safe-area-inset-top))] z-20 h-9 rounded-full px-4 text-[14px] font-semibold backdrop-blur-md ${organize ? "bg-accent text-white" : "bg-black/45 text-white"}`}>
+        className={`pressable fixed right-3 top-[max(0.75rem,env(safe-area-inset-top))] z-20 h-10 rounded-full px-4 text-[13px] font-semibold ${organize ? "glass-pill-gold" : "glass-pill text-white"}`}>
         {organize ? "完成" : "整理"}
       </button>
       <ClipList items={items} setItems={setItems} onNearEnd={load} organize={organize} enabled={enabled} />

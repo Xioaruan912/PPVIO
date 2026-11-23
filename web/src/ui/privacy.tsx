@@ -38,8 +38,13 @@ export function PrivacyGuard() {
   if (!isLocked) return null;
   return (
     <button type="button" onClick={() => set(false)} aria-label="继续"
-      className="fixed inset-0 z-50 grid place-items-center bg-bg text-muted">
-      <span className="flex flex-col items-center gap-3 text-[15px]"><EyeClosedIcon size={40} />点按继续</span>
+      className="fixed inset-0 z-50 grid place-items-center bg-[#050608]/96 text-muted backdrop-blur-2xl">
+      <span className="glass-pill flex flex-col items-center gap-3 rounded-[28px] px-10 py-8 text-[15px] font-medium text-ink">
+        <span className="grid size-14 place-items-center rounded-full bg-white/[0.08] text-ink">
+          <EyeClosedIcon size={30} />
+        </span>
+        点按继续
+      </span>
     </button>
   );
 }

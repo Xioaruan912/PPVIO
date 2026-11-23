@@ -4,7 +4,7 @@ import { api, type Tag } from "../api";
 import { curationApi, type FeedPreferences } from "../curationApi";
 import { Sheet } from "./Sheet";
 
-export function FeedPreferencesButton({ onSaved }: { onSaved: () => void }) {
+export function FeedPreferencesButton({ onSaved, className = "" }: { onSaved: () => void; className?: string }) {
   const [open, setOpen] = useState(false);
   const [tags, setTags] = useState<Tag[]>([]);
   const [value, setValue] = useState<FeedPreferences | null>(null);
@@ -49,8 +49,8 @@ export function FeedPreferencesButton({ onSaved }: { onSaved: () => void }) {
   };
   return <>
     <button type="button" aria-label="刷流偏好" onClick={() => void load()}
-      className="flex min-h-10 items-center justify-center gap-1.5 rounded-full bg-surface px-3 text-[13px]">
-      <SlidersHorizontalIcon size={19} /><span>偏好</span>
+      className={`glass-pill pressable flex min-h-10 items-center justify-center gap-1.5 rounded-full px-3.5 text-[13px] font-medium text-white ${className}`}>
+      <SlidersHorizontalIcon size={17} weight="bold" /><span>偏好</span>
     </button>
     <Sheet open={open} onClose={close} title="刷流偏好">
       <form className="space-y-4 px-3" onSubmit={event => { event.preventDefault(); void save(); }}>
@@ -83,10 +83,10 @@ export function FeedPreferencesButton({ onSaved }: { onSaved: () => void }) {
           {value ? "保存失败，已保留选择，请重试。" : "偏好加载失败。"}
           {!value && <button type="button" aria-label="重试偏好设置" onClick={() => void load()} className="ml-3 min-h-10 underline">重试</button>}
         </div>}
-        <div className="sticky bottom-0 flex gap-2 bg-surface py-2">
-          <button type="button" aria-label="取消偏好设置" disabled={saving} onClick={close} className="min-h-11 flex-1 rounded-full bg-raised text-[14px] disabled:opacity-40">取消</button>
+        <div className="sticky bottom-0 flex gap-2 bg-[#14161b]/95 py-2.5 backdrop-blur-md">
+          <button type="button" aria-label="取消偏好设置" disabled={saving} onClick={close} className="pressable min-h-11 flex-1 rounded-full bg-raised text-[14px] font-medium text-ink disabled:opacity-40">取消</button>
           <button type="submit" disabled={!value || saving || (value.mode === "only" && !value.preferred_tags.length)}
-            className="min-h-11 flex-1 rounded-full bg-ink text-[14px] font-semibold text-bg disabled:opacity-40">{saving ? "保存中…" : "保存偏好"}</button>
+            className="pressable min-h-11 flex-1 rounded-full bg-ink text-[14px] font-semibold text-bg disabled:opacity-40">{saving ? "保存中…" : "保存偏好"}</button>
         </div>
       </form>
     </Sheet>

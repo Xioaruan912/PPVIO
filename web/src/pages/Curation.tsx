@@ -138,34 +138,34 @@ export function Curation({ onBack, onOpen }: { onBack: () => void; onOpen: Open 
   const openTags = (action: TagAction) => { setTagIds([]); setActionError(false); setTagAction(action); void loadTags(); };
   const tagLabel = tagAction === "add" ? "追加标签" : "移除标签";
 
-  return <main className="mx-auto min-h-dvh max-w-6xl px-3 pb-32 pt-[max(1.25rem,env(safe-area-inset-top))]">
-    <header className="mb-4 flex items-center gap-3 px-1">
-      <button type="button" onClick={onBack} aria-label="返回片库" className="grid size-10 place-items-center rounded-full bg-surface"><CaretLeftIcon size={20} /></button>
-      <h1 className="min-w-0 flex-1 text-[26px] font-semibold tracking-tight">整理片库</h1><BlurToggle />
+  return <main className="mx-auto min-h-dvh max-w-6xl px-3.5 pb-32 pt-[max(1.25rem,env(safe-area-inset-top))]">
+    <header className="mb-4 flex items-center gap-2.5 px-0.5">
+      <button type="button" onClick={onBack} aria-label="返回片库" className="ios-card pressable grid size-10 shrink-0 place-items-center rounded-full text-ink"><CaretLeftIcon size={19} weight="bold" /></button>
+      <h1 className="min-w-0 flex-1 text-[26px] font-semibold tracking-[-0.03em] text-ink">整理片库</h1><BlurToggle />
     </header>
-    <div role="tablist" aria-label="整理状态" className="mb-3 flex gap-1 rounded-full bg-surface p-1">
+    <div role="tablist" aria-label="整理状态" className="ios-card mb-3 flex gap-1 rounded-full p-1">
       {([false, true] as const).map(value => <button key={String(value)} type="button" role="tab" aria-label={value ? "已整理" : "待整理"}
         aria-selected={organized === value} disabled={saving} onClick={() => setOrganized(value)}
-        className={`min-h-10 flex-1 rounded-full text-[14px] ${organized === value ? "bg-raised font-semibold" : "text-muted"}`}>{value ? "已整理" : "待整理"}</button>)}
+        className={`pressable min-h-10 flex-1 rounded-full text-[14px] transition-colors ${organized === value ? "bg-raised font-semibold text-ink shadow-[0_2px_8px_rgba(0,0,0,0.3)]" : "text-muted"}`}>{value ? "已整理" : "待整理"}</button>)}
     </div>
     <p className="mb-3 px-1 text-[13px] text-muted">整理状态与看过记录分开保存。先选择视频，再批量操作。</p>
-    <section aria-label="批量整理" className="sticky top-0 z-10 mb-3 space-y-2 rounded-[14px] bg-bg py-2">
+    <section aria-label="批量整理" className="glass-header sticky top-0 z-10 mb-3 space-y-2 rounded-[18px] py-2">
       <div className="flex flex-wrap items-center gap-2 text-[13px]">
-        <span role="status" className="mr-auto tabular-nums">已选 {selected.length} / 100</span>
+        <span role="status" className="mr-auto font-medium tabular-nums text-ink">已选 {selected.length} / 100</span>
         <button type="button" aria-label="选择当前已加载" disabled={saving || !items.length || selected.length >= 100}
           onClick={() => setSelected(ids => [...new Set([...ids, ...items.map(item => item.id)])].slice(0, 100))}
-          className="min-h-10 rounded-full bg-surface px-3 disabled:opacity-40">选择已加载</button>
+          className="ios-card pressable min-h-10 rounded-full px-3.5 font-medium disabled:opacity-40">选择已加载</button>
         <button type="button" aria-label="清空选择" disabled={saving || !selected.length} onClick={() => setSelected([])}
-          className="min-h-10 rounded-full bg-surface px-3 disabled:opacity-40">清空</button>
+          className="ios-card pressable min-h-10 rounded-full px-3.5 font-medium disabled:opacity-40">清空</button>
       </div>
       <div className="grid grid-cols-3 gap-2 text-[13px]">
         <button type="button" aria-label="追加标签" disabled={saving || !selected.length || !tagsReady} onClick={() => openTags("add")}
-          className="flex min-h-11 items-center justify-center gap-1 rounded-full bg-surface disabled:opacity-40"><PlusCircleIcon size={17} />追加标签</button>
+          className="ios-card pressable flex min-h-11 items-center justify-center gap-1 rounded-full font-medium disabled:opacity-40"><PlusCircleIcon size={17} />追加标签</button>
         <button type="button" aria-label="移除标签" disabled={saving || !selected.length || !tagsReady} onClick={() => openTags("remove")}
-          className="flex min-h-11 items-center justify-center gap-1 rounded-full bg-surface disabled:opacity-40"><MinusCircleIcon size={17} />移除标签</button>
+          className="ios-card pressable flex min-h-11 items-center justify-center gap-1 rounded-full font-medium disabled:opacity-40"><MinusCircleIcon size={17} />移除标签</button>
         <button type="button" aria-label={organized ? "移回待整理" : "标记完成"} disabled={saving || !selected.length}
           onClick={() => void apply({ organized: !organized })}
-          className="flex min-h-11 items-center justify-center gap-1 rounded-full bg-ink font-semibold text-bg disabled:opacity-40">
+          className="pressable flex min-h-11 items-center justify-center gap-1 rounded-full bg-ink font-semibold text-bg disabled:opacity-40">
           <CheckCircleIcon size={17} />{saving && !tagAction ? "保存中…" : organized ? "移回待整理" : "标记完成"}</button>
       </div>
     </section>

@@ -1,34 +1,237 @@
 @import "tailwindcss";
 @import "@fontsource-variable/geist";
 
-/* Charcoal + coral. One accent, used for state (playing, favourite, progress), never decoration. */
+/* Obsidian Atelier — Flagship Luxury Cinema + VisionOS / iOS 26 Liquid Glass + Brushed Champagne Gold */
 @theme {
-  --color-bg: #0e0f11;
-  --color-surface: #16181b;
-  --color-raised: #1d2024;
-  --color-line: rgb(255 255 255 / 0.09);
-  --color-ink: #eceef1;
-  --color-muted: #9aa1ab;
-  --color-faint: #6b727c;
-  --color-accent: #f2554a;
-  --color-accent-soft: rgb(242 85 74 / 0.16);
-  --font-sans: "Geist Variable", "HarmonyOS Sans SC", "MiSans", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
-  --radius-card: 14px;
+  --color-bg: #050507;
+  --color-surface: #101116;
+  --color-raised: #1a1c24;
+  --color-line: rgb(255 255 255 / 0.085);
+  --color-line-strong: rgb(255 255 255 / 0.18);
+  --color-ink: #f7f6f2;
+  --color-muted: #9e9ca6;
+  --color-faint: #676672;
+  --color-accent: #ff453a;
+  --color-accent-soft: rgb(255 69 58 / 0.16);
+  --color-gold: #e6c687;
+  --color-gold-bright: #f6dfa8;
+  --color-gold-soft: rgb(230 198 135 / 0.16);
+  --color-ok: #30d158;
+  --font-sans: "Geist Variable", -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "HarmonyOS Sans SC", "MiSans", "Noto Sans SC", system-ui, sans-serif;
+  --radius-card: 20px;
 }
 
-html, body, #root { height: 100%; }
+:root {
+  color-scheme: dark;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
 body {
   margin: 0;
   background: var(--color-bg);
   color: var(--color-ink);
   font-family: var(--font-sans);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior: none;
+  caret-color: var(--color-gold);
 }
-button { cursor: pointer; }
-:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+
+::selection {
+  background: rgb(230 198 135 / 0.3);
+  color: #ffffff;
+}
+
+button, a, select, input[type="range"] {
+  touch-action: manipulation;
+}
+
+button {
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-gold);
+  outline-offset: 2px;
+}
+
+@keyframes ambientDrift {
+  0%, 100% {
+    transform: translate3d(-50%, 0, 0) scale(1);
+    opacity: 0.72;
+  }
+  50% {
+    transform: translate3d(-48%, 14px, 0) scale(1.08);
+    opacity: 1;
+  }
+}
+
+@keyframes sheenSweep {
+  0% {
+    transform: translateX(-140%) skewX(-18deg);
+  }
+  100% {
+    transform: translateX(240%) skewX(-18deg);
+  }
+}
+
+/* Luxury VisionOS / iOS 26 Liquid Glass & Specular Hardware Surfaces */
+@layer utilities {
+  .cinema-aura {
+    background:
+      radial-gradient(62% 40% at 50% -6%, rgb(230 198 135 / 0.14) 0%, rgb(230 198 135 / 0.03) 48%, transparent 75%),
+      radial-gradient(45% 32% at 88% 8%, rgb(255 69 58 / 0.08) 0%, transparent 70%);
+  }
+
+  .animate-aura {
+    animation: ambientDrift 11s ease-in-out infinite;
+  }
+
+  .glass-dock {
+    background: linear-gradient(180deg, rgb(28 29 37 / 0.78) 0%, rgb(16 17 22 / 0.86) 100%);
+    backdrop-filter: blur(30px) saturate(210%);
+    -webkit-backdrop-filter: blur(30px) saturate(210%);
+    border: 1px solid rgb(255 255 255 / 0.15);
+    box-shadow:
+      0 18px 48px rgb(0 0 0 / 0.68),
+      0 2px 10px rgb(0 0 0 / 0.4),
+      inset 0 1px 0 rgb(255 255 255 / 0.24),
+      inset 0 -1px 0 rgb(230 198 135 / 0.08);
+  }
+
+  .glass-dock-cinema {
+    background: linear-gradient(180deg, rgb(20 21 28 / 0.56) 0%, rgb(10 11 15 / 0.68) 100%);
+    backdrop-filter: blur(26px) saturate(190%);
+    -webkit-backdrop-filter: blur(26px) saturate(190%);
+    border: 1px solid rgb(255 255 255 / 0.16);
+    box-shadow:
+      0 16px 42px rgb(0 0 0 / 0.58),
+      inset 0 1px 0 rgb(255 255 255 / 0.22);
+  }
+
+  .glass-pill {
+    background: linear-gradient(180deg, rgb(28 30 38 / 0.62) 0%, rgb(14 15 20 / 0.72) 100%);
+    backdrop-filter: blur(22px) saturate(190%);
+    -webkit-backdrop-filter: blur(22px) saturate(190%);
+    border: 1px solid rgb(255 255 255 / 0.16);
+    box-shadow:
+      0 8px 24px rgb(0 0 0 / 0.44),
+      inset 0 1px 0 rgb(255 255 255 / 0.22);
+  }
+
+  .glass-pill-gold {
+    background: linear-gradient(135deg, rgb(246 223 168 / 0.94) 0%, rgb(216 177 104 / 0.94) 100%);
+    color: #0b0b0e;
+    border: 1px solid rgb(255 247 224 / 0.55);
+    box-shadow:
+      0 10px 28px rgb(230 198 135 / 0.28),
+      inset 0 1px 0 rgb(255 255 255 / 0.6);
+  }
+
+  .glass-sheet {
+    background: linear-gradient(180deg, rgb(26 27 34 / 0.94) 0%, rgb(14 15 19 / 0.98) 100%);
+    backdrop-filter: blur(36px) saturate(200%);
+    -webkit-backdrop-filter: blur(36px) saturate(200%);
+    border-top: 1px solid rgb(255 255 255 / 0.2);
+    box-shadow:
+      0 -24px 64px rgb(0 0 0 / 0.76),
+      inset 0 1px 0 rgb(255 255 255 / 0.16);
+  }
+
+  .glass-header {
+    background: linear-gradient(180deg, rgb(5 5 7 / 0.92) 0%, rgb(5 5 7 / 0.74) 74%, rgb(5 5 7 / 0) 100%);
+    backdrop-filter: blur(20px) saturate(170%);
+    -webkit-backdrop-filter: blur(20px) saturate(170%);
+  }
+
+  .ios-card {
+    background: linear-gradient(180deg, rgb(23 24 31 / 0.92) 0%, rgb(15 16 21 / 0.96) 100%);
+    border: 1px solid rgb(255 255 255 / 0.09);
+    box-shadow:
+      0 10px 30px rgb(0 0 0 / 0.34),
+      inset 0 1px 0 rgb(255 255 255 / 0.08);
+  }
+
+  .luxury-card {
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(160deg, rgb(26 27 35 / 0.92) 0%, rgb(13 14 19 / 0.96) 100%);
+    border: 1px solid rgb(255 255 255 / 0.1);
+    box-shadow:
+      0 14px 36px rgb(0 0 0 / 0.48),
+      inset 0 1px 0 rgb(255 255 255 / 0.12);
+    transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1), border-color 220ms ease, box-shadow 260ms ease;
+  }
+
+  .luxury-card:hover {
+    border-color: rgb(230 198 135 / 0.32);
+    box-shadow:
+      0 20px 44px rgb(0 0 0 / 0.6),
+      0 0 0 1px rgb(230 198 135 / 0.12),
+      inset 0 1px 0 rgb(255 255 255 / 0.2);
+  }
+
+  .sheen-overlay::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(105deg, transparent 25%, rgb(255 248 232 / 0.16) 50%, transparent 75%);
+    transform: translateX(-140%) skewX(-18deg);
+  }
+
+  .sheen-overlay:hover::after {
+    animation: sheenSweep 0.85s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .pressable {
+    transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1), background-color 180ms ease, border-color 180ms ease, opacity 160ms ease, box-shadow 200ms ease;
+  }
+
+  .pressable:active:not(:disabled) {
+    transform: scale(0.95);
+  }
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgb(230 198 135 / 0.22);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(230 198 135 / 0.4);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass-dock,
+  .glass-dock-cinema,
+  .glass-pill,
+  .glass-sheet,
+  .glass-header {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: #14151b;
+  }
+}
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; scroll-behavior: auto !important; }
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -1,10 +1,13 @@
+import { MagnifyingGlassIcon } from "@phosphor-icons/react";
+import { motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, Unauthorized, type Page, type Tag } from "../api";
 import { BlurToggle, Grid, usePages } from "../ui/Grid";
 import { useLocked } from "../ui/privacy";
+import { SPRING_TAP, SPRING_UI } from "../ui/motion";
 import type { Open } from "./Library";
 
-const action = "min-h-11 rounded-full bg-surface px-4 text-sm disabled:opacity-50";
+const action = "ios-card pressable min-h-11 rounded-full px-4 text-sm font-medium text-ink disabled:opacity-50";
 
 export const tagCollectionAPI = {
   async list(tagId: number | null, offset = 0, signal?: AbortSignal): Promise<Page> {
@@ -43,25 +46,33 @@ export function TagCollections({ onOpen, onManage, refresh = 0, notice }: {
   if (locked || !visible) return null;
   const matches = tags.filter(tag => tag.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
   const title = tags.find(tag => tag.id === selected)?.name ?? "全部已归类";
-  return <main className="mx-auto min-h-dvh max-w-6xl px-3 pb-32 pt-[max(1.25rem,env(safe-area-inset-top))]">
-    <header className="mb-4 flex min-w-0 items-center gap-2 px-1"><h1 className="min-w-0 flex-1 text-[26px] font-semibold tracking-tight">标签收藏</h1>
-      <button type="button" aria-label="管理标签" onClick={onManage} className="min-h-11 shrink-0 rounded-full bg-surface px-3 text-sm">管理标签</button><BlurToggle />
+  return <main className="mx-auto min-h-dvh max-w-6xl px-3.5 pb-32 pt-[max(1.25rem,env(safe-area-inset-top))]">
+    <header className="mb-4 flex min-w-0 items-center gap-2.5 px-0.5">
+      <h1 className="min-w-0 flex-1 text-[32px] font-semibold leading-tight tracking-[-0.035em] text-ink">标签收藏</h1>
+      <button type="button" aria-label="管理标签" onClick={onManage} className="ios-card pressable min-h-10 shrink-0 rounded-full px-3.5 text-[13px] font-medium text-ink hover:border-gold/30">管理标签</button>
+      <BlurToggle />
     </header>
     {notice}
-    <input type="search" aria-label="搜索标签收藏" placeholder="搜索标签" value={query} onChange={event => setQuery(event.target.value)}
-      className="mb-3 min-h-11 w-full min-w-0 rounded-lg bg-surface px-3 text-sm" />
-    <div aria-label="标签分类" className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-      <button type="button" aria-label="全部已归类" aria-pressed={selected === null} onClick={() => setSelected(null)}
-        className={`min-h-14 rounded-xl px-3 py-2 text-left text-sm ${selected === null ? "bg-accent font-semibold text-white" : "bg-surface"}`}>全部已归类</button>
-      {matches.map(tag => <button key={tag.id} type="button" aria-label={`打开标签 ${tag.name}`} aria-pressed={selected === tag.id} onClick={() => setSelected(tag.id)}
-        className={`flex min-h-14 min-w-0 items-center gap-2 rounded-xl px-3 py-2 text-left text-sm ${selected === tag.id ? "bg-accent text-white" : "bg-surface"}`}>
-        <span className="min-w-0 flex-1 break-words">{tag.name}</span><span className="shrink-0 text-xs tabular-nums opacity-75">{tag.count}</span>
-      </button>)}
+    <div className="relative mb-3.5">
+      <MagnifyingGlassIcon size={17} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-gold/70" />
+      <input type="search" aria-label="搜索标签收藏" placeholder="搜索标签" value={query} onChange={event => setQuery(event.target.value)}
+        className="ios-card min-h-11 w-full min-w-0 rounded-[16px] pl-10 pr-3.5 text-[14px] text-ink placeholder:text-faint outline-none transition focus:border-gold/50" />
+    </div>
+    <div aria-label="标签分类" className="mb-5 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
+      <motion.button type="button" layout aria-label="全部已归类" aria-pressed={selected === null} onClick={() => setSelected(null)}
+        whileTap={{ scale: 0.96 }} transition={SPRING_TAP}
+        className={`sheen-overlay min-h-14 rounded-[18px] px-4 py-2.5 text-left text-[14px] transition-all ${selected === null ? "glass-pill-gold font-semibold" : "luxury-card text-ink/90"}`}>全部已归类</motion.button>
+      {matches.map(tag => <motion.button key={tag.id} layout type="button" aria-label={`打开标签 ${tag.name}`} aria-pressed={selected === tag.id} onClick={() => setSelected(tag.id)}
+        whileTap={{ scale: 0.96 }} transition={{ ...SPRING_UI, scale: SPRING_TAP }}
+        className={`sheen-overlay flex min-h-14 min-w-0 items-center gap-2 rounded-[18px] px-4 py-2.5 text-left text-[14px] transition-all ${selected === tag.id ? "glass-pill-gold font-semibold" : "luxury-card text-ink/90"}`}>
+        <span className="min-w-0 flex-1 break-words">{tag.name}</span>
+        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums ${selected === tag.id ? "bg-black/15 text-[#0b0b0e]" : "bg-white/[0.07] text-gold/85"}`}>{tag.count}</span>
+      </motion.button>)}
     </div>
     {loading && <p role="status" className="mb-4 text-center text-sm text-muted">正在读取标签…</p>}
     {failed && <div role="alert" className="mb-4 text-sm text-accent"><button type="button" aria-label="重试标签列表" onClick={() => setRetry(value => value + 1)} className={action}>标签读取失败，点击重试</button></div>}
     {!loading && !failed && !matches.length && <p className="mb-5 text-center text-sm text-muted">{query.trim() ? "没有匹配的标签" : "还没有标签，请先管理标签或在视频中选择标签。"}</p>}
-    <h2 className="mb-3 px-1 text-base font-semibold">{title}</h2>
+    <h2 className="mb-3 px-0.5 text-[16px] font-semibold tracking-[-0.01em] text-ink">{title}</h2>
     <TagWall key={`${selected ?? "all"}:${refresh}`} tagId={selected} onOpen={onOpen} />
   </main>;
 }
