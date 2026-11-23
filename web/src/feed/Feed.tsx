@@ -1,4 +1,4 @@
-import { ArrowDownIcon, CaretLeftIcon, TrashIcon } from "@phosphor-icons/react";
+import { ArrowDownIcon, ArrowsClockwiseIcon, CaretLeftIcon, TrashIcon } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, chooseStream, Unauthorized, type Media } from "../api";
@@ -12,6 +12,7 @@ import { FeedPreferencesButton } from "../ui/FeedPreferences";
 import { QuickTagPanel } from "../ui/QuickTags";
 import { subscribeMediaChanges } from "../ui/Grid";
 import { SPRING_SHEET } from "../ui/motion";
+import { haptic } from "../ui/haptics";
 
 /** Append new clips, never one already in the list. */
 export function mergeFeed(current: Media[], incoming: Media[]): Media[] {
@@ -23,17 +24,20 @@ export function mergeFeed(current: Media[], incoming: Media[]): Media[] {
  * Clips one per screen, swiped vertically. Shared by the feed and by any wall a
  * clip is opened from (library, favorites, a folder).
  */
-export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, organize = false, enabled = true, startAt }: {
+export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, onRefresh, organize = false, enabled = true, startAt }: {
   items: Media[];
   setItems: (update: (list: Media[]) => Media[]) => void;
   start?: number;
   onNearEnd?: () => void;
   onClose?: () => void;
+  onRefresh?: () => void;
   /** 整理模式: big delete / favorite / skip buttons for a quick clean-up pass. */
   organize?: boolean;
   enabled?: boolean; startAt?: number;
 }) {
   const [active, setActive] = useState(start);
+  const [pullY, setPullY] = useState(0);
+  const pullStart = useRef<number | null>(null);
   const container = useRef<HTMLDivElement>(null);
   const prefs = usePrefs();
   useEffect(() => subscribeMediaChanges(change => setItems(list => "removed" in change
@@ -123,7 +127,25 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, organ
   };
 
   return (
-    <div ref={container} className="h-dvh snap-y snap-mandatory overflow-y-scroll [scrollbar-width:none]">
+    <div ref={container} className="h-dvh snap-y snap-mandatory overflow-y-scroll [scrollbar-width:none]"
+      onTouchStart={e => { if (onRefresh && (container.current?.scrollTop ?? 0) <= 2) pullStart.current = e.touches[0]?.clientY ?? null; }}
+      onTouchMove={e => {
+        if (!onRefresh || pullStart.current === null || (container.current?.scrollTop ?? 0) > 2) return;
+        const delta = (e.touches[0]?.clientY ?? 0) - pullStart.current;
+        if (delta > 0) setPullY(Math.min(80, delta * 0.45));
+      }}
+      onTouchEnd={() => {
+        if (onRefresh && pullY >= 52) { haptic(10); onRefresh(); }
+        pullStart.current = null; setPullY(0);
+      }}>
+      {pullY > 12 && (
+        <div aria-hidden="true" className="pointer-events-none fixed inset-x-0 top-[max(3.75rem,env(safe-area-inset-top))] z-20 flex justify-center">
+          <span className="glass-pill inline-flex h-8 items-center gap-1.5 rounded-full px-3.5 text-[12px] font-medium text-gold-bright">
+            <ArrowsClockwiseIcon size={14} className={pullY >= 52 ? "animate-spin" : ""} />
+            {pullY >= 52 ? "松开换一批" : "下拉换一批"}
+          </span>
+        </div>
+      )}
       <AnimatePresence>
         {organize && current && (
           <motion.div key="organize-dock"
@@ -183,10 +205,11 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, organ
 /** The home feed: the server's shuffled deck, unwatched first. */
 export function Feed({ onUnauthorized, enabled = true }: { onUnauthorized: () => void; enabled?: boolean }) {
   const [revision, setRevision] = useState(0);
-  return <><FeedPreferencesButton className="fixed left-3 top-[max(0.75rem,env(safe-area-inset-top))] z-20" onSaved={() => setRevision(value => value + 1)} /><FeedContent key={revision} onUnauthorized={onUnauthorized} enabled={enabled} /></>;
+  const shuffle = useCallback(() => { setRevision(value => value + 1); toast("已换一批短视频"); }, []);
+  return <><FeedPreferencesButton className="fixed left-3 top-[max(0.75rem,env(safe-area-inset-top))] z-20" onSaved={() => setRevision(value => value + 1)} /><FeedContent key={revision} onUnauthorized={onUnauthorized} enabled={enabled} onRefresh={shuffle} /></>;
 }
 
-function FeedContent({ onUnauthorized, enabled }: { onUnauthorized: () => void; enabled: boolean }) {
+function FeedContent({ onUnauthorized, enabled, onRefresh }: { onUnauthorized: () => void; enabled: boolean; onRefresh: () => void }) {
   const [items, setItems] = useState<Media[]>([]);
   const [organize, setOrganize] = useState(false);
   const [state, setState] = useState<"loading" | "ready" | "empty" | "error">("loading");
@@ -222,7 +245,7 @@ function FeedContent({ onUnauthorized, enabled }: { onUnauthorized: () => void; 
         className={`pressable fixed right-3 top-[max(0.75rem,env(safe-area-inset-top))] z-20 h-10 rounded-full px-4 text-[13px] font-semibold ${organize ? "glass-pill-gold" : "glass-pill text-white"}`}>
         {organize ? "完成" : "整理"}
       </button>
-      <ClipList items={items} setItems={setItems} onNearEnd={load} organize={organize} enabled={enabled} />
+      <ClipList items={items} setItems={setItems} onNearEnd={load} onRefresh={onRefresh} organize={organize} enabled={enabled} />
     </>
   );
 }

@@ -1,13 +1,29 @@
 import {
-  CaretLeftIcon, CaretRightIcon, ClockCounterClockwiseIcon, FadersHorizontalIcon,
+  ArrowsClockwiseIcon, CaretLeftIcon, CaretRightIcon, ClockCounterClockwiseIcon, FadersHorizontalIcon,
   FolderIcon, QueueIcon, StarIcon,
 } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type LibraryDate, type LibraryFolder, type Media, type Tag, type VideoFilters, type VideoSort } from "../api";
 import { usePrefs } from "../prefs";
 import { BlurToggle, Cover, formatDuration, Grid, usePages, WatchedBar } from "../ui/Grid";
 import { SPRING_PILL, SPRING_TAP, SPRING_UI } from "../ui/motion";
+import { GlassSelect, GridSkeleton, ListSkeleton } from "../ui/Skeleton";
+import { haptic } from "../ui/haptics";
+
+const SORT_OPTIONS = [
+  { value: "newest", label: "最新" },
+  { value: "longest", label: "时长最长" },
+  { value: "largest", label: "体积最大" },
+  { value: "random", label: "随机" },
+] as const;
+
+const TIMEBAND_OPTIONS = [
+  { value: "all", label: "全部时长" },
+  { value: "short", label: "1 分钟内" },
+  { value: "medium", label: "1–5 分钟" },
+  { value: "long", label: "5 分钟以上" },
+] as const;
 
 export type Open = (items: Media[], index: number, more?: () => void, at?: number) => void;
 
@@ -19,6 +35,9 @@ type Recent = Media & { position_seconds: number };
 export function Library({ onOpen, onBookmarks, onCuration, onHistory, onChannels, onPremium, onQueue, refresh = 0, selectedFolder, onFolderChange }: { onOpen: Open; onBookmarks?: () => void; onCuration?: () => void; onHistory?: () => void; onChannels?: () => void; onPremium?: () => void; onQueue?: () => void; refresh?: number; selectedFolder?: LibraryFolder | null; onFolderChange?: (folder: LibraryFolder | null) => void }) {
   const [view, setView] = useState<View>("short");
   const [localFolder, setLocalFolder] = useState<LibraryFolder | null>(null);
+  const [pullY, setPullY] = useState(0);
+  const [manualRefresh, setManualRefresh] = useState(0);
+  const touchStartY = useRef<number | null>(null);
   const folder = selectedFolder === undefined ? localFolder : selectedFolder;
   const setFolder = onFolderChange ?? setLocalFolder;
   const shortcuts = [
@@ -28,7 +47,25 @@ export function Library({ onOpen, onBookmarks, onCuration, onHistory, onChannels
     ["待播", onQueue, QueueIcon],
   ] as const;
   return (
-    <main className="mx-auto min-h-dvh max-w-6xl px-3.5 pb-32 pt-[max(1.25rem,env(safe-area-inset-top))]">
+    <main className="mx-auto min-h-dvh max-w-6xl px-3.5 pb-32 pt-[max(1.25rem,env(safe-area-inset-top))]"
+      onTouchStart={e => { if (window.scrollY <= 0) touchStartY.current = e.touches[0]?.clientY ?? null; }}
+      onTouchMove={e => {
+        if (touchStartY.current === null || window.scrollY > 0) return;
+        const delta = (e.touches[0]?.clientY ?? 0) - touchStartY.current;
+        if (delta > 0) setPullY(Math.min(84, delta * 0.45));
+      }}
+      onTouchEnd={() => {
+        if (pullY >= 52) { haptic(10); setManualRefresh(n => n + 1); }
+        touchStartY.current = null; setPullY(0);
+      }}>
+      {pullY > 10 && (
+        <div aria-hidden="true" className="mb-2 flex justify-center overflow-hidden" style={{ height: Math.round(pullY * 0.65) }}>
+          <span className="glass-pill inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-[12px] font-medium text-gold-bright">
+            <ArrowsClockwiseIcon size={14} className={pullY >= 52 ? "animate-spin" : ""} />
+            {pullY >= 52 ? "松开刷新片库" : "下拉刷新"}
+          </span>
+        </div>
+      )}
       <header className="mb-4 flex items-center gap-2.5 px-0.5">
         {folder ? (
           <button type="button" onClick={() => setFolder(null)} aria-label="返回文件夹"
@@ -67,14 +104,14 @@ export function Library({ onOpen, onBookmarks, onCuration, onHistory, onChannels
               </button>
             ))}
           </div>
-          {view === "folders" ? <Folders onPick={setFolder} /> : <CategoryWall category={view} onOpen={onOpen} refresh={refresh} />}
+          {view === "folders" ? <Folders key={manualRefresh} onPick={setFolder} /> : <CategoryWall category={view} onOpen={onOpen} refresh={refresh} reload={manualRefresh} />}
         </>
       )}
     </main>
   );
 }
 
-function CategoryWall({ category, onOpen, refresh }: { category: "short" | "long"; onOpen: Open; refresh: number }) {
+function CategoryWall({ category, onOpen, refresh, reload = 0 }: { category: "short" | "long"; onOpen: Open; refresh: number; reload?: number }) {
   const [tags, setTags] = useState<Tag[]>([]);
   const [tag, setTag] = useState<number | null>(null);
   const [sort, setSort] = useState<VideoSort>("newest");
@@ -96,22 +133,14 @@ function CategoryWall({ category, onOpen, refresh }: { category: "short" | "long
     max_seconds: timeband === "short" ? 60 : timeband === "medium" ? 300 : undefined,
   }), [category, tag, sort, unwatched, timeband]);
   const fetchPage = useCallback((_: string | null, offset: number) => api.videos(category, offset, 20, tag, filters), [category, tag, filters]);
-  const pages = usePages(fetchPage, JSON.stringify([category, tag, filters]));
+  const pages = usePages(fetchPage, JSON.stringify([category, tag, filters, reload]));
   useEffect(() => { void pages.more(); }, [pages.more]);
   return (
     <>
       {category === "long" && tag === null && recent.length > 0 && <ContinueRow items={recent} onOpen={onOpen} />}
       <div className="mb-3 flex flex-wrap items-center gap-2 text-[13px]">
-        <select aria-label="排序" value={sort} onChange={event => setSort(event.target.value as VideoSort)}
-          className="ios-card min-h-10 min-w-0 flex-1 rounded-full px-3.5 text-ink outline-none focus:border-accent">
-          <option value="newest">最新</option><option value="longest">时长最长</option>
-          <option value="largest">体积最大</option><option value="random">随机</option>
-        </select>
-        <select aria-label="时长范围" value={timeband} onChange={event => setTimeband(event.target.value)}
-          className="ios-card min-h-10 min-w-0 flex-1 rounded-full px-3.5 text-ink outline-none focus:border-accent">
-          <option value="all">全部时长</option><option value="short">1 分钟内</option>
-          <option value="medium">1–5 分钟</option><option value="long">5 分钟以上</option>
-        </select>
+        <GlassSelect label="排序" value={sort} options={SORT_OPTIONS} onChange={setSort} className="min-w-0 flex-1" />
+        <GlassSelect label="时长范围" value={timeband} options={TIMEBAND_OPTIONS} onChange={setTimeband} className="min-w-0 flex-1" />
         <button type="button" aria-label="只看未看" aria-pressed={unwatched} onClick={() => setUnwatched(value => !value)}
           className={`pressable min-h-10 shrink-0 rounded-full px-3.5 font-medium transition-colors ${unwatched ? "glass-pill-gold font-semibold" : "ios-card text-muted hover:text-ink"}`}>只看未看</button>
       </div>
@@ -123,7 +152,8 @@ function CategoryWall({ category, onOpen, refresh }: { category: "short" | "long
           ))}
         </div>
       )}
-      {pages.done && !pages.items.length ? <Empty>{tag !== null ? "这个标签下还没有视频" : category === "long" ? "还没有长视频" : "还没有短视频"}</Empty>
+      {!pages.done && !pages.items.length && !pages.error ? <GridSkeleton wide={category === "long"} count={category === "long" ? 4 : 9} />
+        : pages.done && !pages.items.length ? <Empty>{tag !== null ? "这个标签下还没有视频" : category === "long" ? "还没有长视频" : "还没有短视频"}</Empty>
         : <Grid items={pages.items} wide={category === "long"} progress={category === "long" ? progress : undefined} done={pages.done} onEnd={() => void pages.more()}
             error={pages.error} onRetry={() => void pages.retry()} onOpen={(index, at) => onOpen(pages.items, index, () => void pages.more(), at)} />}
     </>
@@ -173,7 +203,7 @@ function Folders({ onPick }: { onPick: (folder: LibraryFolder) => void }) {
     void api.libraryFolders(null).then(f => setPlain(f.items)).catch(() => undefined);
   }, []);
   useEffect(() => { if (open) void api.libraryFolders(open).then(f => setBatches(f.items)); }, [open]);
-  if (dates === null) return <Empty>正在加载…</Empty>;
+  if (dates === null) return <ListSkeleton rows={5} />;
   return (
     <div className="ios-card divide-y divide-line overflow-hidden rounded-[20px]">
       {plain.map(f => <Row key={f.id} label={f.label} count={f.video_count} onClick={() => onPick(f)} />)}

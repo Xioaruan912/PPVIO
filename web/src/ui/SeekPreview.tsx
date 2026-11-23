@@ -36,9 +36,9 @@ export function SeekPreview({ id, time, enabled }: { id: string; time: number; e
   if (!enabled) return null;
   const frame = preview?.frames.reduce<(NonNullable<Preview["frames"]>[number]) | undefined>((best, f) => !best || Math.abs(f.at - time) < Math.abs(best.at - time) ? f : best, undefined);
   return (
-    <div className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 w-36 -translate-x-1/2 overflow-hidden rounded-lg bg-black/85 p-1 text-center text-xs text-white" role="status" aria-label="目标时间">
-      {frame && <img src={frame.url} alt="目标位置附近的画面" className="aspect-video w-full rounded object-contain" />}
-      <span className="block py-1 tabular-nums">{clock(time)}</span>
+    <div className="glass-dock pointer-events-none absolute bottom-full left-1/2 z-20 mb-3 w-40 -translate-x-1/2 overflow-hidden rounded-[16px] p-1.5 text-center text-xs text-white" role="status" aria-label="目标时间">
+      {frame && <img src={frame.url} alt="目标位置附近的画面" className="aspect-video w-full rounded-[10px] bg-black object-contain" />}
+      <span className="block py-1 font-semibold tabular-nums text-gold-bright">{clock(time)}</span>
       {!frame && <span className="block pb-1 text-[10px] text-white/65">{preview?.state === "unavailable" ? "画面预览暂不可用" : preview.exhausted ? "仍在生成，请稍后重试" : "正在生成画面预览…"}</span>}
     </div>
   );
@@ -57,15 +57,15 @@ export function PreviewButton({ media, onPlay }: { media: Media; onPlay?: (at: n
     return () => abort.abort();
   }, [open]);
   return <>
-    <button type="button" onClick={() => setOpen(true)} aria-label="预览画面" className="absolute right-1 top-1 grid size-8 place-items-center rounded-full bg-black/60 text-white"><EyeIcon size={17} /></button>
-    {open && <div role="dialog" aria-modal="true" aria-label="画面预览" className="fixed inset-0 z-40 flex items-center justify-center bg-black/75 p-4" onClick={() => setOpen(false)}>
-      <div className="max-h-[85dvh] w-full max-w-lg overflow-auto rounded-2xl bg-surface p-3 text-ink" onClick={event => event.stopPropagation()}>
-        <div className="mb-3 flex items-center justify-between"><h2 className="px-2 font-semibold">画面预览</h2><button type="button" onClick={() => setOpen(false)} aria-label="关闭预览" className="grid size-10 place-items-center"><XIcon size={22} /></button></div>
-        {preview?.state === "ready" ? <div className="grid grid-cols-2 gap-2">{preview.frames.map(frame => <button key={frame.index} type="button" onClick={() => { setOpen(false); onPlay?.(frame.at); }} className="relative overflow-hidden rounded-lg bg-black" aria-label={`从 ${clock(frame.at)} 播放`}>
+    <button type="button" onClick={() => setOpen(true)} aria-label="预览画面" className="glass-pill pressable absolute right-1.5 top-1.5 grid size-8 place-items-center rounded-full text-white hover:border-gold/40"><EyeIcon size={16} /></button>
+    {open && <div role="dialog" aria-modal="true" aria-label="画面预览" className="fixed inset-0 z-40 flex items-center justify-center bg-black/75 p-4 backdrop-blur-[5px]" onClick={() => setOpen(false)}>
+      <div className="glass-dock max-h-[85dvh] w-full max-w-lg overflow-auto rounded-[26px] p-3.5 text-ink" onClick={event => event.stopPropagation()}>
+        <div className="mb-3 flex items-center justify-between"><h2 className="px-2 text-[16px] font-semibold tracking-[-0.01em]">画面预览</h2><button type="button" onClick={() => setOpen(false)} aria-label="关闭预览" className="pressable grid size-10 place-items-center rounded-full hover:bg-white/[0.08]"><XIcon size={20} /></button></div>
+        {preview?.state === "ready" ? <div className="grid grid-cols-2 gap-2.5">{preview.frames.map(frame => <button key={frame.index} type="button" onClick={() => { setOpen(false); onPlay?.(frame.at); }} className="luxury-card pressable relative overflow-hidden rounded-[13px] bg-black" aria-label={`从 ${clock(frame.at)} 播放`}>
           <img src={frame.url} alt={`约 ${clock(frame.at)} 的画面`} className="aspect-video w-full object-contain" />
-          <span className="absolute bottom-1 left-1 flex items-center gap-1 rounded bg-black/70 px-1 text-xs text-white"><PlayIcon size={12} />{clock(frame.at)}</span>
+          <span className="glass-pill absolute bottom-1.5 left-1.5 flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums text-gold-bright"><PlayIcon size={11} weight="fill" />{clock(frame.at)}</span>
         </button>)}</div> : <p className="px-3 py-12 text-center text-sm text-muted" role="status">{preview?.state === "unavailable" ? "暂时无法生成预览，仍可正常播放视频" : preview.exhausted ? "预览仍在排队或生成，可稍后刷新" : "正在生成画面预览，首次需要稍等…"}</p>}
-        {(preview.exhausted || preview.state === "unavailable") && <button type="button" onClick={preview.refresh} className="mx-auto mb-4 block rounded-full bg-raised px-5 py-3 text-sm">刷新预览</button>}
+        {(preview.exhausted || preview.state === "unavailable") && <button type="button" onClick={preview.refresh} className="ios-card pressable mx-auto mb-3 block rounded-full px-5 py-2.5 text-sm font-medium text-ink">刷新预览</button>}
       </div>
     </div>}
   </>;

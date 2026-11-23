@@ -37,10 +37,10 @@ export function TagFilingNotice({ mediaId }: { mediaId?: string }) {
     finally { setBusy(false); }
   };
   if (locked || !visible) return null;
-  return <div className="mb-3 rounded-xl bg-surface px-3 py-2 text-xs leading-relaxed text-muted" role="status">
-    {failed ? <button type="button" onClick={() => setRevision(value => value + 1)} className="min-h-10">文件归类状态读取失败，点击重试</button>
+  return <div className="ios-card mb-3.5 rounded-[16px] px-3.5 py-2.5 text-xs leading-relaxed text-muted" role="status">
+    {failed ? <button type="button" onClick={() => setRevision(value => value + 1)} className="min-h-9 text-gold-bright">文件归类状态读取失败，点击重试</button>
       : state ? <><span>{mediaId ? state.item?.status === "synced" ? "已移动到主标签目录" : state.item ? "文件正在按标签归类" : "标签选择后会移动到主标签目录" : `WebDAV归类：已完成 ${state.synced}，待完成 ${state.pending}${state.unsupported ? `，需处理 ${state.unsupported}` : ""}`}</span>
-        {(state.retrying > 0 || state.unsupported > 0) && <button type="button" disabled={busy} onClick={() => void retry()} className="ml-3 min-h-10 text-accent disabled:opacity-40">{busy ? "提交中…" : "重试归类"}</button>}</> : "正在读取文件归类状态…"}
-    <p>文件只放在一个主标签目录，其他标签用于检索。</p>
+        {(state.retrying > 0 || state.unsupported > 0) && <button type="button" disabled={busy} onClick={() => void retry()} className="ml-3 min-h-9 font-medium text-gold-bright disabled:opacity-40">{busy ? "提交中…" : "重试归类"}</button>}</> : "正在读取文件归类状态…"}
+    <p className="mt-0.5 text-faint">文件只放在一个主标签目录，其他标签用于检索。</p>
   </div>;
 }

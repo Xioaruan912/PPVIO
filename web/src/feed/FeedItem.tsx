@@ -17,6 +17,7 @@ import { useClipRange } from "../player/clipRange";
 import { usePlaybackHistory } from "../player/usePlaybackHistory";
 import { QuickTagButton, QuickTagPanel } from "../ui/QuickTags";
 import { Sheet } from "../ui/Sheet";
+import { haptic } from "../ui/haptics";
 
 interface Props {
   media: Media;
@@ -96,10 +97,11 @@ export function FeedItem({ media, active, mounted, eager = false, onBufferReadin
       const el = video.current;
       if (event === "tap") setPaused(value => !value);
       else if (event === "double-tap") {
+        haptic(12);
         setQuickTags(true);
         const y = lastY.current;
         setBursts(list => [...list, { id: performance.now(), x, y }]);
-      } else if (event === "long-press-start" && el) { el.playbackRate = 2; setFast(true); }
+      } else if (event === "long-press-start" && el) { haptic(10); el.playbackRate = 2; setFast(true); }
       else if (event === "long-press-end" && el) { el.playbackRate = 1; setFast(false); }
     });
     recognizer.current = g;
@@ -171,15 +173,28 @@ export function FeedItem({ media, active, mounted, eager = false, onBufferReadin
       {enabled && !invalid && <RecoveryNotice {...recovery} compatible={hasLow && !prefs.lowRes ? () => setPref("lowRes", true) : undefined} />}
       {enabled && horizontal.target !== null && <div className="pointer-events-none absolute inset-x-0 bottom-44"><SeekPreview id={media.id} time={horizontal.target} enabled /></div>}
 
-      {media.groups?.[0]?.label && !raised && (
+      {!raised && (
         <motion.div
           animate={active ? { opacity: 1, y: 0 } : { opacity: 0, y: 12 }}
           transition={{ type: "spring", visualDuration: 0.38, bounce: 0.08 }}
-          className="pointer-events-none absolute bottom-[calc(7.25rem+env(safe-area-inset-bottom))] left-3.5 max-w-[68%]">
-          <div className="glass-pill inline-flex max-w-full items-center gap-2 rounded-full px-3.5 py-1.5 text-[13px] font-medium tracking-[-0.01em] text-ink/95">
-            <span className="size-1.5 shrink-0 rounded-full bg-gold shadow-[0_0_8px_rgba(230,198,135,0.9)]" aria-hidden="true" />
-            <span className="truncate">{media.groups[0].label}</span>
-          </div>
+          className="pointer-events-none absolute bottom-[calc(7.25rem+env(safe-area-inset-bottom))] left-3.5 flex max-w-[70%] flex-col items-start gap-2">
+          <AnimatePresence>
+            {prefs.muted && active && (
+              <motion.button key="unmute-hint" type="button" aria-label="点按开启声音"
+                initial={{ opacity: 0, y: 8, scale: 0.92 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -6, scale: 0.92 }}
+                transition={{ type: "spring", visualDuration: 0.3, bounce: 0.16 }}
+                onClick={() => { haptic(8); setPref("muted", false); }}
+                className="glass-pill-gold pressable pointer-events-auto inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold">
+                <SpeakerSlashIcon size={14} weight="fill" />点按开启声音
+              </motion.button>
+            )}
+          </AnimatePresence>
+          {media.groups?.[0]?.label && (
+            <div className="glass-pill inline-flex max-w-full items-center gap-2 rounded-full px-3.5 py-1.5 text-[13px] font-medium tracking-[-0.01em] text-ink/95">
+              <span className="size-1.5 shrink-0 rounded-full bg-gold shadow-[0_0_8px_rgba(230,198,135,0.9)]" aria-hidden="true" />
+              <span className="truncate">{media.groups[0].label}</span>
+            </div>
+          )}
         </motion.div>
       )}
 

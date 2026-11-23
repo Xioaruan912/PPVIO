@@ -1,10 +1,11 @@
 import {
   ArrowClockwiseIcon, ArrowCounterClockwiseIcon, CaretLeftIcon, CornersOutIcon, DotsThreeIcon,
-  PauseIcon, PictureInPictureIcon, PlayIcon, SpeakerHighIcon, SpeakerSlashIcon,
+  LockSimpleIcon, LockSimpleOpenIcon, PauseIcon, PictureInPictureIcon, PlayIcon, SpeakerHighIcon, SpeakerSlashIcon,
 } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { api, chooseStream, type Media } from "../api";
+import { mediaTools } from "../mediaTools";
 import { GestureRecognizer } from "../feed/gestures";
 import { MediaActions } from "../feed/MediaActions";
 import { setPref, usePrefs } from "../prefs";
@@ -19,6 +20,7 @@ import { useHorizontalSeek } from "./useHorizontalSeek";
 import { usePlaybackRecovery, RecoveryNotice } from "./usePlaybackRecovery";
 import { usePlaybackHistory } from "./usePlaybackHistory";
 import { QuickTagButton } from "../ui/QuickTags";
+import { haptic } from "../ui/haptics";
 
 const SPEEDS = [1, 1.25, 1.5, 2];
 const SAVE_EVERY_MS = 10_000;
@@ -68,6 +70,9 @@ export function LongPlayer({ media, next, onClose, onNext, startAt, continueNext
   const [jump, setJump] = useState<"back" | "forward" | null>(null);
   const [failed, setFailed] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [screenLocked, setScreenLocked] = useState(false);
+  const [unlockHint, setUnlockHint] = useState(false);
+  const [markers, setMarkers] = useState<number[]>([]);
   const [countdown, setCountdown] = useState<number | null>(null);
   const resume = useRef(startAt ?? 0);
   const src = chooseStream(media, prefs.lowRes);
@@ -81,9 +86,17 @@ export function LongPlayer({ media, next, onClose, onNext, startAt, continueNext
   const title = media.groups?.[0]?.label;
   const pip = document.pictureInPictureEnabled;
 
-  const horizontal = useHorizontalSeek(video, src, !locked);
+  const horizontal = useHorizontalSeek(video, src, !locked && !screenLocked);
   const recovery = usePlaybackRecovery(video, src, !locked);
   usePlaybackHistory(video, media, src, !locked);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void mediaTools.bookmarks(media.id, controller.signal)
+      .then(r => { if (!controller.signal.aborted) setMarkers(r.items.map(b => b.position_seconds)); })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [media.id]);
 
   useEffect(() => { setLongPlayback(true); return () => setLongPlayback(false); }, []);
   useEffect(() => {
@@ -126,6 +139,7 @@ export function LongPlayer({ media, next, onClose, onNext, startAt, continueNext
     if (el) el.currentTime = Math.max(0, Math.min(el.duration || Infinity, el.currentTime + delta));
   };
   const jumpBy = (forward: boolean) => {
+    haptic(10);
     seekBy(forward ? 10 : -10);
     setJump(forward ? "forward" : "back");
     setTimeout(() => setJump(null), 500);
@@ -162,15 +176,19 @@ export function LongPlayer({ media, next, onClose, onNext, startAt, continueNext
   const gestures = useRef<GestureRecognizer | null>(null);
   useEffect(() => {
     const g = new GestureRecognizer((event, x) => {
+      if (screenLocked) {
+        if (event === "tap") setUnlockHint(v => !v);
+        return;
+      }
       const el = video.current;
       if (event === "tap") setControls(value => !value);
       else if (event === "double-tap") jumpBy(x > window.innerWidth / 2);
-      else if (event === "long-press-start" && el && !el.paused) { el.playbackRate = 2; setFast(true); }
+      else if (event === "long-press-start" && el && !el.paused) { haptic(10); el.playbackRate = 2; setFast(true); }
       else if (event === "long-press-end" && el) { el.playbackRate = speed; setFast(false); }
     });
     gestures.current = g;
     return () => g.dispose();
-  }, [speed]);
+  }, [speed, screenLocked]);
 
   // Keyboard on a computer; typing in a sheet's text field is left alone.
   const keys = useRef<(key: PlayerKey) => void>(() => undefined);
@@ -250,7 +268,16 @@ export function LongPlayer({ media, next, onClose, onNext, startAt, continueNext
             initial={{ opacity: 0, y: -12, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -6 }}
             transition={{ type: "spring", visualDuration: 0.26, bounce: 0.2 }}>2× 快进中</motion.span>
         )}
-        {controls && !fast && (
+        {screenLocked && unlockHint && (
+          <motion.button key="unlock-screen" type="button" aria-label="解除防误触锁屏"
+            onClick={() => { haptic(8); setScreenLocked(false); setUnlockHint(false); setControls(true); }}
+            initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
+            transition={{ type: "spring", visualDuration: 0.25, bounce: 0.14 }}
+            className="glass-pill-gold pressable absolute left-4 top-1/2 z-20 flex -translate-y-1/2 items-center gap-1.5 rounded-full px-4 py-2.5 text-[13px] font-semibold">
+            <LockSimpleOpenIcon size={17} weight="bold" />点按解锁
+          </motion.button>
+        )}
+        {controls && !fast && !screenLocked && (
           <motion.div key="controls" className="pointer-events-none absolute inset-0 flex flex-col justify-between bg-gradient-to-b from-black/68 via-transparent to-black/82"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}>
             <motion.div initial={{ y: -16, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -12, opacity: 0 }}
@@ -258,6 +285,8 @@ export function LongPlayer({ media, next, onClose, onNext, startAt, continueNext
               className="pointer-events-auto flex items-center gap-2 px-3.5 pt-[max(0.85rem,env(safe-area-inset-top))] text-white">
               <button type="button" onClick={onClose} aria-label="返回" className="glass-pill pressable grid size-10 shrink-0 place-items-center rounded-full"><CaretLeftIcon size={20} weight="bold" /></button>
               <p className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-0.01em] drop-shadow-[0_1px_8px_rgba(0,0,0,0.7)]">{title}</p>
+              <button type="button" onClick={() => { haptic(8); setScreenLocked(true); setUnlockHint(true); setControls(false); }} aria-label="锁定屏幕防误触"
+                className="glass-pill pressable grid size-10 shrink-0 place-items-center rounded-full"><LockSimpleIcon size={19} /></button>
               <QuickTagButton media={media} enabled={!locked} />
               <BookmarkButton media={media} video={video} enabled={!locked} />
               <button type="button" onClick={() => setMenu(true)} aria-label="更多" className="glass-pill pressable grid size-10 shrink-0 place-items-center rounded-full"><DotsThreeIcon size={24} weight="bold" /></button>
@@ -266,7 +295,7 @@ export function LongPlayer({ media, next, onClose, onNext, startAt, continueNext
               transition={{ type: "spring", visualDuration: 0.36, bounce: 0.12 }}
               className="pointer-events-auto mx-auto w-full max-w-3xl px-3.5 pb-[max(1rem,env(safe-area-inset-bottom))]">
               <div className="glass-dock rounded-[24px] px-4 pb-3 pt-2">
-                <SeekBar video={video} source={src} mediaId={media.id} duration={duration} enabled={!locked} />
+                <SeekBar video={video} source={src} mediaId={media.id} duration={duration} enabled={!locked} markers={markers} />
                 <div className="mt-1 flex items-center gap-1.5 text-white">
                   <motion.button type="button" onClick={toggle} aria-label={playing ? "暂停" : "播放"}
                     whileTap={{ scale: 0.86 }} transition={{ type: "spring", stiffness: 520, damping: 24 }}

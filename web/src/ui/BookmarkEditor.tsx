@@ -70,7 +70,7 @@ function BookmarkForm({ bookmark, onSaved, onClose }: {
       </fieldset>
     </fieldset>
     {error && <p role="alert" className="text-sm text-accent">{error}</p>}
-    <div className="flex gap-2"><button type="button" aria-label="取消编辑片段" disabled={busy} onClick={() => { if (!mutation.current) callbacks.current.onClose(); }} className={`${action} flex-1`}>取消</button>
-      <button type="submit" aria-label="保存片段" disabled={busy || loading || failed} className="min-h-11 flex-1 rounded-full bg-accent px-4 text-sm text-white disabled:opacity-50">{busy ? "正在保存…" : "保存片段"}</button></div>
+    <div className="flex gap-2"><button type="button" aria-label="取消编辑片段" disabled={busy} onClick={() => { if (!mutation.current) callbacks.current.onClose(); }} className={`${action} ios-card pressable flex-1`}>取消</button>
+      <button type="submit" aria-label="保存片段" disabled={busy || loading || failed} className="glass-pill-gold pressable min-h-11 flex-1 rounded-full px-4 text-sm font-semibold disabled:opacity-50">{busy ? "正在保存…" : "保存片段"}</button></div>
   </form>;
 }

@@ -143,22 +143,22 @@ export function ManualCoverPicker({ media, video, onSaved, onClose, embedded = f
       <button type="button" onClick={close} aria-label="关闭封面选择" className="grid size-11 shrink-0 place-items-center"><XIcon size={22} /></button>
     </div>
     <button type="button" aria-label="使用当前画面" disabled={busy} onClick={capture}
-      className="mx-3 mb-3 min-h-11 rounded-full bg-accent px-5 text-sm text-white disabled:opacity-50">{busy ? "正在保存…" : "使用当前画面"}</button>
+      className="glass-pill-gold pressable mx-3 mb-3 min-h-11 rounded-full px-5 text-sm font-semibold disabled:opacity-50">{busy ? "正在保存…" : "使用当前画面"}</button>
     {error && <p role="alert" className="mb-3 px-3 text-sm text-accent">{error}</p>}
-    <p className="mb-2 px-3 text-sm font-medium">或选择预览画面</p>
-    {preview.state === "ready" && preview.frames.length > 0 ? <div className="grid grid-cols-2 gap-2 px-3">
+    <p className="mb-2 px-3 text-sm font-medium text-ink">或选择预览画面</p>
+    {preview.state === "ready" && preview.frames.length > 0 ? <div className="grid grid-cols-2 gap-2.5 px-3">
       {preview.frames.map(frame => <button key={frame.index} type="button" disabled={busy} aria-label={`使用 ${clock(frame.at)} 的画面`}
-        onClick={() => choosePreview(frame)} className="relative min-h-11 overflow-hidden rounded-lg bg-black disabled:opacity-50">
+        onClick={() => choosePreview(frame)} className="luxury-card pressable relative min-h-11 overflow-hidden rounded-[13px] bg-black disabled:opacity-50">
         <img ref={element => { if (element) images.current.set(frame.index, element); else images.current.delete(frame.index); }}
           src={frame.url} alt={`约 ${clock(frame.at)} 的画面`} className="aspect-video w-full object-contain" />
-        <span className="absolute bottom-1 left-1 rounded bg-black/70 px-1 text-xs tabular-nums text-white">{clock(frame.at)}</span>
+        <span className="glass-pill absolute bottom-1.5 left-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums text-gold-bright">{clock(frame.at)}</span>
       </button>)}
     </div> : <p role="status" className="px-3 py-8 text-center text-sm text-muted">{preview.state === "unavailable" ? "预览暂不可用，仍可尝试当前画面。"
       : preview.exhausted ? "预览仍在排队，请稍后刷新。" : "正在准备 8 帧预览…"}</p>}
     {(preview.exhausted || preview.state === "unavailable") && <button type="button" disabled={busy} onClick={preview.refresh}
-      className="mx-3 my-2 min-h-11 rounded-full bg-raised px-4 text-sm disabled:opacity-50">刷新预览</button>}
+      className="ios-card pressable mx-3 my-2 min-h-11 rounded-full px-4 text-sm font-medium disabled:opacity-50">刷新预览</button>}
     <button type="button" aria-label="恢复默认封面" disabled={busy} onClick={() => void save()}
-      className="mt-3 min-h-11 w-full rounded-lg px-4 text-left text-sm text-muted disabled:opacity-50">恢复默认封面</button>
+      className="pressable mt-3 min-h-11 w-full rounded-[14px] px-4 text-left text-sm text-muted hover:bg-white/[0.04] disabled:opacity-50">恢复默认封面</button>
   </>;
   return embedded ? content : <Sheet open onClose={close} title="选择封面">{content}</Sheet>;
 }

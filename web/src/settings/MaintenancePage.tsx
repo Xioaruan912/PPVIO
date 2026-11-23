@@ -1,6 +1,7 @@
 import { CaretRightIcon, CheckCircleIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { api, type Status } from "../api";
 import { toast } from "../ui/toast";
+import { GlassSelect } from "../ui/Skeleton";
 import { SettingsHeader, SettingsLine, SettingsSection } from "./shared";
 
 function ago(seconds: number | null): string {
@@ -42,19 +43,18 @@ export function MaintenancePage({ status, watched, dupes, onWatchedChange, onDup
 
       <SettingsSection title="片库策略与清理">
         {watched && (
-          <label className="flex items-center justify-between gap-4 px-4 py-3.5">
+          <div className="flex items-center justify-between gap-4 px-4 py-3.5">
             <span>
               <span className="block text-[15px] font-medium text-ink">看过的视频</span>
               <span className="mt-0.5 block text-[13px] leading-snug text-muted">多久后重新算作没看过，刷流时会再次推荐</span>
             </span>
-            <select value={watched.forget_after_days ?? ""} className="h-9 rounded-[11px] border border-line bg-black/55 px-2.5 text-[14px] text-ink outline-none focus:border-gold/50"
-              onChange={e => {
-                const days = e.target.value === "" ? null : Number(e.target.value);
+            <GlassSelect label="看过的视频" value={String(watched.forget_after_days ?? "")}
+              options={watched.choices.map(c => ({ value: String(c ?? ""), label: c === null ? "永不" : `${c} 天` }))}
+              onChange={val => {
+                const days = val === "" ? null : Number(val);
                 void api.setWatched(days).then(() => onWatchedChange({ ...watched, forget_after_days: days })).catch(() => toast("保存失败"));
-              }}>
-              {watched.choices.map(c => <option key={String(c)} value={c ?? ""}>{c === null ? "永不" : `${c} 天`}</option>)}
-            </select>
-          </label>
+              }} className="w-28 shrink-0" />
+          </div>
         )}
         <button type="button" onClick={onDuplicates} className="flex w-full items-center justify-between px-4 py-3.5 text-left transition-colors hover:bg-white/[0.03] active:bg-white/[0.06]">
           <span>

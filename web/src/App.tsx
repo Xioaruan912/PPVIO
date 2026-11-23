@@ -1,27 +1,29 @@
 import { GearSixIcon, TagIcon, PlayIcon, SquaresFourIcon } from "@phosphor-icons/react";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Media, LibraryFolder } from "./api";
 import { ClipList, Feed } from "./feed/Feed";
 import { Login } from "./Login";
-import { Duplicates } from "./pages/Duplicates";
-import { TagCollections } from "./pages/TagCollections";
-import { History } from "./pages/History";
-import { Channels } from "./pages/Channels";
-import { TagManager } from "./pages/TagManager";
-import { Queue } from "./pages/Queue";
-import { QueuePlayer } from "./player/QueuePlayer";
-import { Library } from "./pages/Library";
-import { LongPlayer } from "./player/LongPlayer";
-import { Settings } from "./Settings";
 import { PrivacyGuard } from "./ui/privacy";
 import { Toasts } from "./ui/toast";
-import { BookmarkWall } from "./ui/Bookmarks";
 import { useRouteState } from "./ui/navigation";
-import { Curation } from "./pages/Curation";
-import { BookmarkLoopFeed } from "./pages/BookmarkLoopFeed";
 import { TagFilingNotice } from "./ui/TagFilingNotice";
 import { SPRING_PILL, SPRING_STAGE, SPRING_TAP, SPRING_UI } from "./ui/motion";
+import { DismissibleOverlay } from "./ui/DismissibleOverlay";
+
+const Library = lazy(() => import("./pages/Library").then(m => ({ default: m.Library })));
+const TagCollections = lazy(() => import("./pages/TagCollections").then(m => ({ default: m.TagCollections })));
+const Settings = lazy(() => import("./Settings").then(m => ({ default: m.Settings })));
+const LongPlayer = lazy(() => import("./player/LongPlayer").then(m => ({ default: m.LongPlayer })));
+const Duplicates = lazy(() => import("./pages/Duplicates").then(m => ({ default: m.Duplicates })));
+const BookmarkWall = lazy(() => import("./ui/Bookmarks").then(m => ({ default: m.BookmarkWall })));
+const BookmarkLoopFeed = lazy(() => import("./pages/BookmarkLoopFeed").then(m => ({ default: m.BookmarkLoopFeed })));
+const Curation = lazy(() => import("./pages/Curation").then(m => ({ default: m.Curation })));
+const History = lazy(() => import("./pages/History").then(m => ({ default: m.History })));
+const Channels = lazy(() => import("./pages/Channels").then(m => ({ default: m.Channels })));
+const TagManager = lazy(() => import("./pages/TagManager").then(m => ({ default: m.TagManager })));
+const Queue = lazy(() => import("./pages/Queue").then(m => ({ default: m.Queue })));
+const QueuePlayer = lazy(() => import("./player/QueuePlayer").then(m => ({ default: m.QueuePlayer })));
 
 type Tab = "feed" | "library" | "favorites" | "settings";
 type Overlay = { kind: "clips"; items: Media[]; index: number; at?: number } | { kind: "long"; items: Media[]; index: number; at?: number } | { kind: "duplicates" } | { kind: "bookmarks" } | { kind: "curation" } | { kind: "loops"; tagId?: number } | { kind: "history" | "channels" | "premium" | "tags" | "queue" } | { kind: "queue-player"; ids: string[]; index: number } | null;
@@ -39,6 +41,14 @@ export function overlayFor(items: Media[], index: number): Overlay {
   }
   const shorts = items.filter(item => item.category !== "long");
   return { kind: "clips", items: shorts, index: shorts.indexOf(picked) };
+}
+
+function PageFallback() {
+  return (
+    <div className="grid min-h-dvh place-items-center bg-bg">
+      <div className="size-8 animate-spin rounded-full border-2 border-gold/25 border-t-gold" />
+    </div>
+  );
 }
 
 export function App() {
@@ -77,73 +87,74 @@ export function App() {
         <div aria-hidden="true" className="cinema-aura pointer-events-none fixed inset-0 -z-10" />
       )}
       <div hidden={tab !== "feed" || !!overlay}><Feed onUnauthorized={onUnauthorized} enabled={tab === "feed" && !overlay} /></div>
-      {libraryOpened && (
-        <div hidden={tab !== "library"}>
-          <motion.div animate={tab === "library" ? { opacity: 1, y: 0, scale: 1 } : { opacity: 0.7, y: 10, scale: 0.99 }} transition={SPRING_UI}>
-            <Library selectedFolder={route.folder} onFolderChange={folder => navigate({ ...route, folder })} onOpen={open} refresh={closed} onBookmarks={() => navigate({ ...route, tab, overlay: { kind: "bookmarks" } })} onCuration={() => navigate({ ...route, tab, overlay: { kind: "curation" } })} onHistory={() => show("history")} onChannels={() => show("channels")} onPremium={() => show("premium")} onQueue={() => show("queue")} />
+      <Suspense fallback={<PageFallback />}>
+        {libraryOpened && (
+          <div hidden={tab !== "library"}>
+            <motion.div animate={tab === "library" ? { opacity: 1, y: 0, scale: 1 } : { opacity: 0.7, y: 10, scale: 0.99 }} transition={SPRING_UI}>
+              <Library selectedFolder={route.folder} onFolderChange={folder => navigate({ ...route, folder })} onOpen={open} refresh={closed} onBookmarks={() => navigate({ ...route, tab, overlay: { kind: "bookmarks" } })} onCuration={() => navigate({ ...route, tab, overlay: { kind: "curation" } })} onHistory={() => show("history")} onChannels={() => show("channels")} onPremium={() => show("premium")} onQueue={() => show("queue")} />
+            </motion.div>
+          </div>
+        )}
+        {favoritesOpened && (
+          <div hidden={tab !== "favorites"}>
+            <motion.div animate={tab === "favorites" ? { opacity: 1, y: 0, scale: 1 } : { opacity: 0.7, y: 10, scale: 0.99 }} transition={SPRING_UI}>
+              <TagCollections onOpen={open} onManage={() => show("tags")} refresh={closed} notice={tab === "favorites" && !overlay ? <TagFilingNotice /> : undefined} />
+            </motion.div>
+          </div>
+        )}
+        {tab === "settings" && (
+          <motion.div initial={{ opacity: 0, y: 14, scale: 0.99 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={SPRING_UI}>
+            <Settings onLoggedOut={onUnauthorized} onDuplicates={() => navigate({ ...route, tab, overlay: { kind: "duplicates" } })} />
           </motion.div>
-        </div>
-      )}
-      {favoritesOpened && (
-        <div hidden={tab !== "favorites"}>
-          <motion.div animate={tab === "favorites" ? { opacity: 1, y: 0, scale: 1 } : { opacity: 0.7, y: 10, scale: 0.99 }} transition={SPRING_UI}>
-            <TagCollections onOpen={open} onManage={() => show("tags")} refresh={closed} notice={tab === "favorites" && !overlay ? <TagFilingNotice /> : undefined} />
-          </motion.div>
-        </div>
-      )}
-      {tab === "settings" && (
-        <motion.div initial={{ opacity: 0, y: 14, scale: 0.99 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={SPRING_UI}>
-          <Settings onLoggedOut={onUnauthorized} onDuplicates={() => navigate({ ...route, tab, overlay: { kind: "duplicates" } })} />
-        </motion.div>
-      )}
+        )}
 
-      <AnimatePresence>
-        {overlay?.kind === "clips" && (
-          <motion.div key="ov-clips" className="fixed inset-0 z-30 bg-black"
-            initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }} transition={SPRING_STAGE}>
-            <OverlayClips items={overlay.items} start={overlay.index} onClose={close} at={overlay.at} />
-          </motion.div>
-        )}
-        {overlay?.kind === "long" && overlay.items[overlay.index] && (
-          <motion.div key={`ov-long-${overlay.items[overlay.index].id}`} className="fixed inset-0 z-30 bg-black"
-            initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }} transition={SPRING_STAGE}>
-            <LongPlayer key={overlay.items[overlay.index].id} media={overlay.items[overlay.index]} next={overlay.items[overlay.index + 1]} onClose={close}
-              startAt={overlay.at} onNext={() => replace({ ...route, tab, overlay: { ...overlay, at: undefined, index: overlay.index + 1 } })} />
-          </motion.div>
-        )}
-        {overlay?.kind === "duplicates" && (
-          <motion.div key="ov-dupes" className="fixed inset-0 z-30"
-            initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} transition={SPRING_STAGE}>
-            <Duplicates onClose={close} />
-          </motion.div>
-        )}
-        {overlay?.kind === "bookmarks" && (
-          <OverlaySheet key="ov-bookmarks">
-            <BookmarkWall onBack={close} onOpen={(media, at) => open([media], 0, undefined, at)} onLoop={tagId => navigate({ ...route, overlay: { kind: "loops", tagId } })} />
-          </OverlaySheet>
-        )}
-        {overlay?.kind === "loops" && (
-          <motion.div key="ov-loops" className="fixed inset-0 z-30 bg-black"
-            initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }} transition={SPRING_STAGE}>
-            <BookmarkLoopFeed onClose={close} tagId={overlay.tagId} />
-          </motion.div>
-        )}
-        {overlay?.kind === "curation" && <OverlaySheet key="ov-curation"><Curation onBack={close} onOpen={open} /></OverlaySheet>}
-        {overlay?.kind === "history" && <OverlaySheet key="ov-history"><History onBack={close} onOpen={open} /></OverlaySheet>}
-        {(overlay?.kind === "channels" || overlay?.kind === "premium") && (
-          <OverlaySheet key={`ov-${overlay.kind}`}>
-            <Channels onBack={close} onOpen={open} premiumOnly={overlay.kind === "premium"} onPlayQueue={items => playQueue(items.map(item => item.id), 0)} />
-          </OverlaySheet>
-        )}
-        {overlay?.kind === "tags" && <OverlaySheet key="ov-tags"><TagManager onBack={close} /></OverlaySheet>}
-        {overlay?.kind === "queue" && <OverlaySheet key="ov-queue"><Queue onBack={close} onPlay={playQueue} /></OverlaySheet>}
-        {overlay?.kind === "queue-player" && (
-          <motion.div key="ov-qp" className="fixed inset-0 z-30 bg-black"
-            initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }} transition={SPRING_STAGE}>
-            <QueuePlayer ids={overlay.ids} start={overlay.index} onClose={close} />
-          </motion.div>
-        )}
-      </AnimatePresence>
+        <AnimatePresence>
+          {overlay?.kind === "clips" && (
+            <motion.div key="ov-clips" className="fixed inset-0 z-30 bg-black"
+              initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }} transition={SPRING_STAGE}>
+              <OverlayClips items={overlay.items} start={overlay.index} onClose={close} at={overlay.at} />
+            </motion.div>
+          )}
+          {overlay?.kind === "long" && overlay.items[overlay.index] && (
+            <DismissibleOverlay key={`ov-long-${overlay.items[overlay.index].id}`} onClose={close}>
+              <LongPlayer key={overlay.items[overlay.index].id} media={overlay.items[overlay.index]} next={overlay.items[overlay.index + 1]} onClose={close}
+                startAt={overlay.at} onNext={() => replace({ ...route, tab, overlay: { ...overlay, at: undefined, index: overlay.index + 1 } })} />
+            </DismissibleOverlay>
+          )}
+          {overlay?.kind === "duplicates" && (
+            <motion.div key="ov-dupes" className="fixed inset-0 z-30"
+              initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} transition={SPRING_STAGE}>
+              <Duplicates onClose={close} />
+            </motion.div>
+          )}
+          {overlay?.kind === "bookmarks" && (
+            <OverlaySheet key="ov-bookmarks">
+              <BookmarkWall onBack={close} onOpen={(media, at) => open([media], 0, undefined, at)} onLoop={tagId => navigate({ ...route, overlay: { kind: "loops", tagId } })} />
+            </OverlaySheet>
+          )}
+          {overlay?.kind === "loops" && (
+            <motion.div key="ov-loops" className="fixed inset-0 z-30 bg-black"
+              initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }} transition={SPRING_STAGE}>
+              <BookmarkLoopFeed onClose={close} tagId={overlay.tagId} />
+            </motion.div>
+          )}
+          {overlay?.kind === "curation" && <OverlaySheet key="ov-curation"><Curation onBack={close} onOpen={open} /></OverlaySheet>}
+          {overlay?.kind === "history" && <OverlaySheet key="ov-history"><History onBack={close} onOpen={open} /></OverlaySheet>}
+          {(overlay?.kind === "channels" || overlay?.kind === "premium") && (
+            <OverlaySheet key={`ov-${overlay.kind}`}>
+              <Channels onBack={close} onOpen={open} premiumOnly={overlay.kind === "premium"} onPlayQueue={items => playQueue(items.map(item => item.id), 0)} />
+            </OverlaySheet>
+          )}
+          {overlay?.kind === "tags" && <OverlaySheet key="ov-tags"><TagManager onBack={close} /></OverlaySheet>}
+          {overlay?.kind === "queue" && <OverlaySheet key="ov-queue"><Queue onBack={close} onPlay={playQueue} /></OverlaySheet>}
+          {overlay?.kind === "queue-player" && (
+            <motion.div key="ov-qp" className="fixed inset-0 z-30 bg-black"
+              initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }} transition={SPRING_STAGE}>
+              <QueuePlayer ids={overlay.ids} start={overlay.index} onClose={close} />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </Suspense>
 
       {!overlay && (
         <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={SPRING_STAGE}
