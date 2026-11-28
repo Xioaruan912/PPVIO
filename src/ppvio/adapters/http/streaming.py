@@ -61,6 +61,12 @@ def _tail_requested(request: web.Request) -> bool:
     return isinstance(value, str) and value.strip().lower() in _DOWNLOAD_FLAG_VALUES
 
 
+def _head_requested(request: web.Request) -> bool:
+    """``?head=1`` asks the server to warm the opening chunks into local cache."""
+    value = request.query.get("head")
+    return isinstance(value, str) and value.strip().lower() in _DOWNLOAD_FLAG_VALUES
+
+
 def _media_response_headers(
     request: web.Request,
     media_id: str,
@@ -540,9 +546,31 @@ class PlayerHttpStreamingMixin:
         if self._faststart is not None:
             self._faststart.schedule(media_id, details)
             prepared = True
+        if _head_requested(request):
+            prepared = await self._warm_head(media_id, details) or prepared
         if _tail_requested(request):
             prepared = await self._warm_tail(media_id, details) or prepared
         return web.json_response({"prepared": prepared}, status=202)
+
+    async def _warm_head(self, media_id: str, details: dict[str, object]) -> bool:
+        """Warm the opening window so hovering or queueing a clip starts locally."""
+        cache = self._range_cache
+        if cache is None:
+            return False
+        location = await self._repository.active_media_location(media_id)
+        size = int(details.get("size_bytes") or 0)
+        if location is None or size <= 0:
+            return False
+        head_bytes = self._warm_head_bytes
+        cache.prefetch_head(
+            media_id,
+            location[0],
+            location[1],
+            size,
+            head_bytes,
+            whole_below=head_bytes,
+        )
+        return True
 
     async def _warm_tail(self, media_id: str, details: dict[str, object]) -> bool:
         """Warm the tail window for a viewer who is dragging towards the end.
@@ -589,6 +617,32 @@ class PlayerHttpStreamingMixin:
             head_bytes,
             whole_below=head_bytes,
         )
+        # Also warm the lowest rendition (e.g. 480p) when present, so low-res feed
+        # viewers hit local NVMe cache on frame 0 just like original-quality viewers.
+        active_variants = getattr(self._repository, "active_variants", None)
+        if callable(active_variants):
+            try:
+                variants = await active_variants(media_id)
+            except Exception:
+                variants = []
+            if variants:
+                lowest = min(
+                    variants,
+                    key=lambda v: int(v.get("height") or 10**9),
+                )
+                variant_id = str(lowest.get("variant_media_id") or "")
+                variant_size = int(lowest.get("size_bytes") or 0)
+                if variant_id and variant_size > 0:
+                    var_loc = await self._repository.active_media_location(variant_id)
+                    if var_loc is not None:
+                        self._range_cache.prefetch_head(
+                            variant_id,
+                            var_loc[0],
+                            var_loc[1],
+                            variant_size,
+                            head_bytes,
+                            whole_below=head_bytes,
+                        )
         # Long clips are the ones a viewer scrubs to the end of, and the last
         # window is expensive on a slow archive; short clips play through their
         # tail anyway, so only long ones are warmed here.

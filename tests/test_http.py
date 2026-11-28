@@ -2401,6 +2401,28 @@ class RangeCacheHttpTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(0.05)
         self.assertEqual(self.reader.calls, [])
 
+    async def test_prepare_head_warms_opening_chunks_for_instant_start(self) -> None:
+        cookie = await self._login()
+        prepare = await self.client.post(
+            f"/api/v1/media/{self.media_id}/prepare?head=1",
+            cookies={"ppvio_session": cookie},
+        )
+        self.assertEqual(prepare.status, 202)
+        self.assertEqual(await prepare.json(), {"prepared": True})
+        for _ in range(100):
+            if self.cache.has_chunk(self.media_id, 0):
+                break
+            await asyncio.sleep(0.01)
+        self.assertTrue(self.cache.has_chunk(self.media_id, 0))
+        self.assertTrue(self.reader.calls)
+        head = await self.client.get(
+            f"/api/v1/media/{self.media_id}/stream",
+            headers={"Range": "bytes=0-1023"},
+            cookies={"ppvio_session": cookie},
+        )
+        self.assertEqual(head.status, 206)
+        self.assertEqual(await head.read(), self.buffer[:1024])
+
     async def test_long_clip_prefetch_also_warms_the_tail(self) -> None:
         calls: list[tuple] = []
         original = self.cache.prefetch_tail
