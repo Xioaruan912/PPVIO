@@ -1,13 +1,17 @@
-import { EyeIcon, EyeSlashIcon, StarIcon } from "@phosphor-icons/react";
+import { CheckIcon, EyeIcon, EyeSlashIcon, StarIcon } from "@phosphor-icons/react";
 import { motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Media } from "../api";
+import { chooseStream, type Media } from "../api";
 import { setPref, usePrefs } from "../prefs";
 import { addToQueue, getQueue } from "../queue";
 import { useRatings } from "../ratings";
 import { toast } from "./toast";
 import { PreviewButton } from "./SeekPreview";
-import { SPRING_TAP, SPRING_UI, waveDelay } from "./motion";
+import { SPRING_TAP } from "./motion";
+import { useGridBatchReveal } from "./gsap";
+import { FlutedPrivacyShield } from "./CinemaChrome";
+import { prewarmMedia } from "./prewarm";
+import { haptic } from "./haptics";
 
 export function formatDuration(seconds: number | null): string {
   if (!seconds || !Number.isFinite(seconds)) return "";
@@ -16,15 +20,41 @@ export function formatDuration(seconds: number | null): string {
   return h ? `${h}:${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}` : `${m}:${String(r).padStart(2, "0")}`;
 }
 
-/** A wall of covers; reaching its end asks for the next page. ``progress`` maps id to seconds watched. */
-export function Grid({ items, onOpen, onEnd, done, error, onRetry, wide, progress }: {
+/**
+ * Editorial Cinema Archive wall:
+ * - GSAP ScrollTrigger.batch() staggered aperture unveils
+ * - Desktop hover prewarm + muted live video preview + resting film-grade bloom
+ * - Goons-inspired fluted optical refraction privacy shield when coverBlur is enabled
+ * - Optional frictionless multi-select batch triage mode (long-press or toggle)
+ */
+export function Grid({
+  items, onOpen, onEnd, done, error, onRetry, wide, progress,
+  selecting = false, selectedIds, onToggleSelect, onStartSelect,
+}: {
   items: Media[]; onOpen: (index: number, at?: number) => void; onEnd: () => void; done: boolean; error?: boolean;
   onRetry?: () => void; wide?: boolean; progress?: Map<string, number>;
+  selecting?: boolean;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
+  onStartSelect?: (id: string) => void;
 }) {
   const prefs = usePrefs();
   const ratings = useRatings();
   const [peeking, setPeeking] = useState<string | null>(null);
+  const [hoverPlayId, setHoverPlayId] = useState<string | null>(null);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressed = useRef(false);
+  const gridRef = useRef<HTMLDivElement>(null);
   const sentinel = useRef<HTMLDivElement>(null);
+
+  useGridBatchReveal(gridRef, items.length);
+
+  useEffect(() => () => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    if (longPressTimer.current) clearTimeout(longPressTimer.current);
+  }, []);
+
   useEffect(() => {
     const el = sentinel.current;
     if (!el || done || error) return;
@@ -32,42 +62,121 @@ export function Grid({ items, onOpen, onEnd, done, error, onRetry, wide, progres
     observer.observe(el);
     return () => observer.disconnect();
   }, [onEnd, done, error, items.length]);
+
+  const clearHover = () => {
+    if (hoverTimer.current) { clearTimeout(hoverTimer.current); hoverTimer.current = null; }
+    setHoverPlayId(null);
+  };
+  const clearLongPress = () => {
+    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+  };
+
   return (
     <>
-      <div className={`grid gap-2.5 ${wide ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4" : "grid-cols-3 sm:grid-cols-4 lg:grid-cols-6"}`}>
+      <div ref={gridRef} className={`grid gap-2.5 ${wide ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4" : "grid-cols-3 sm:grid-cols-4 lg:grid-cols-6"}`}>
         {items.map((item, index) => {
           const blurred = prefs.coverBlur && !(prefs.peekOnHold && peeking === item.id);
           const stars = ratings[item.id] ?? 0;
+          const isSelected = !!selectedIds?.has(item.id);
+          const showHoverVideo = hoverPlayId === item.id && !blurred && !selecting;
           return (
-            <motion.div key={item.id}
-              initial={index < 12 ? { opacity: 0, y: 14, scale: 0.96 } : false}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              transition={{ ...SPRING_UI, delay: index < 12 ? waveDelay(index, 11) : 0 }}
-              className="group relative min-w-0">
-              <motion.button type="button" onClick={() => onOpen(index)} aria-label={`播放第 ${index + 1} 个视频`}
-                whileTap={{ scale: 0.96 }} transition={SPRING_TAP}
-                onPointerEnter={e => { if (prefs.coverBlur && prefs.peekOnHold && e.pointerType === "mouse") setPeeking(item.id); }}
-                onPointerLeave={() => { if (peeking === item.id) setPeeking(null); }}
-                onPointerDown={() => { if (prefs.coverBlur && prefs.peekOnHold) setPeeking(item.id); }}
-                onPointerUp={() => { if (peeking === item.id) setPeeking(null); }}
-                onPointerCancel={() => { if (peeking === item.id) setPeeking(null); }}
-                className={`luxury-card sheen-overlay relative block w-full rounded-[16px] ${wide ? "aspect-video" : "aspect-[3/4]"}`}>
-                {item.cover_url && <Cover src={item.cover_url}
-                  className={`size-full object-cover transition-[filter,transform] duration-300 ease-out group-hover:scale-[1.05] ${blurred ? "blur-xl scale-110" : ""}`} />}
-                <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/80 via-black/25 to-transparent" />
+            <div key={item.id} data-grid-card className="group relative min-w-0">
+              <motion.button
+                type="button"
+                onClick={() => {
+                  if (longPressed.current) { longPressed.current = false; return; }
+                  if (selecting && onToggleSelect) { haptic(6); onToggleSelect(item.id); return; }
+                  onOpen(index);
+                }}
+                aria-label={selecting ? `${isSelected ? "取消选择" : "选择"}第 ${index + 1} 个视频` : `播放第 ${index + 1} 个视频`}
+                aria-pressed={selecting ? isSelected : undefined}
+                whileTap={{ scale: 0.96 }}
+                transition={SPRING_TAP}
+                onPointerEnter={e => {
+                  if (e.pointerType === "mouse") {
+                    prewarmMedia(item, prefs.lowRes);
+                    if (prefs.coverBlur && prefs.peekOnHold) setPeeking(item.id);
+                    if (!selecting) {
+                      clearHover();
+                      hoverTimer.current = setTimeout(() => setHoverPlayId(item.id), 380);
+                    }
+                  }
+                }}
+                onPointerLeave={() => {
+                  if (peeking === item.id) setPeeking(null);
+                  clearHover();
+                  clearLongPress();
+                }}
+                onPointerDown={e => {
+                  prewarmMedia(item, prefs.lowRes);
+                  if (prefs.coverBlur && prefs.peekOnHold) setPeeking(item.id);
+                  if (!selecting && onStartSelect && e.button === 0) {
+                    longPressed.current = false;
+                    clearLongPress();
+                    longPressTimer.current = setTimeout(() => {
+                      longPressed.current = true;
+                      haptic(14);
+                      onStartSelect(item.id);
+                    }, 430);
+                  }
+                }}
+                onPointerUp={() => { if (peeking === item.id) setPeeking(null); clearLongPress(); }}
+                onPointerCancel={() => { if (peeking === item.id) setPeeking(null); clearLongPress(); }}
+                className={`luxury-card sheen-overlay relative block w-full rounded-[15px] ${wide ? "aspect-video" : "aspect-[3/4]"} ${isSelected ? "ring-2 ring-gold-bright ring-offset-1 ring-offset-bg scale-[0.96]" : ""}`}
+              >
+                {item.cover_url && (
+                  <Cover
+                    src={item.cover_url}
+                    className={`film-grade size-full object-cover ${blurred ? "blur-xl scale-110" : ""}`}
+                  />
+                )}
+                {showHoverVideo && (
+                  <video
+                    src={chooseStream(item, true)}
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                    preload="metadata"
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0 size-full object-cover"
+                  />
+                )}
+                <FlutedPrivacyShield active={blurred} />
+                {!selecting && !showHoverVideo && (
+                  <span aria-hidden="true"
+                    className="glass-pill film-slate pointer-events-none absolute left-1/2 top-1/2 hidden size-12 -translate-x-1/2 -translate-y-1/2 scale-90 place-items-center rounded-full text-[9.5px] font-semibold text-gold-bright opacity-0 transition-[opacity,transform] duration-250 ease-out sm:grid group-hover:scale-100 group-hover:opacity-100">
+                    PLAY
+                  </span>
+                )}
+                <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/84 via-black/26 to-transparent" />
                 {stars > 0 && (
-                  <span className="glass-pill absolute bottom-1.5 left-1.5 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-gold-bright">
+                  <span className="glass-pill film-slate absolute bottom-1.5 left-1.5 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold text-gold-bright">
                     <StarIcon size={10} weight="fill" />{stars}
                   </span>
                 )}
-                <span className="glass-pill absolute bottom-1.5 right-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums text-ink">{formatDuration(item.duration_seconds)}</span>
+                <span className="glass-pill film-slate absolute bottom-1.5 right-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium text-ink">
+                  {formatDuration(item.duration_seconds)}
+                </span>
+                {selecting && (
+                  <span aria-hidden="true"
+                    className={`absolute right-2 top-2 grid size-6.5 place-items-center rounded-full border transition-colors ${isSelected ? "border-gold-bright bg-gold text-bg shadow-[0_4px_14px_rgba(229,196,132,0.45)]" : "border-white/45 bg-black/55 text-transparent"}`}>
+                    <CheckIcon size={14} weight="bold" />
+                  </span>
+                )}
                 <WatchedBar seconds={progress?.get(item.id)} duration={item.duration_seconds} />
               </motion.button>
-              <PreviewButton media={item} onPlay={at => onOpen(index, at)} />
-              <button type="button" aria-label={`加入待播第 ${index + 1} 个视频`}
-                onClick={() => toast(addToQueue(item) ? "已加入待播队列" : getQueue().length >= 100 ? "队列已满，最多100个" : "已在待播队列中")}
-                className="glass-pill pressable absolute left-1.5 top-1.5 min-h-8 rounded-full px-2.5 text-[11px] font-medium text-ink/95 hover:border-gold/40">待播</button>
-            </motion.div>
+              {!selecting && (
+                <>
+                  <PreviewButton media={item} onPlay={at => onOpen(index, at)} />
+                  <button type="button" aria-label={`加入待播第 ${index + 1} 个视频`}
+                    onClick={() => toast(addToQueue(item) ? "已加入待播队列" : getQueue().length >= 100 ? "队列已满，最多100个" : "已在待播队列中")}
+                    className="glass-pill pressable absolute left-1.5 top-1.5 min-h-8 rounded-full px-2.5 text-[11px] font-medium text-ink/95 hover:border-gold/45">
+                    待播
+                  </button>
+                </>
+              )}
+            </div>
           );
         })}
       </div>
@@ -81,7 +190,7 @@ export function Grid({ items, onOpen, onEnd, done, error, onRetry, wide, progres
 
 export const COVER_RETRIES = 4;
 
-/** A cover that asks again, after a growing pause, when the server was busy (it turns covers away rather than queue them). */
+/** A cover that asks again, after a growing pause, when the server was busy. */
 export function Cover({ src, className }: { src: string; className: string }) {
   const [attempt, setAttempt] = useState(0);
   useEffect(() => setAttempt(0), [src]);
@@ -89,10 +198,9 @@ export function Cover({ src, className }: { src: string; className: string }) {
     onError={() => { if (attempt < COVER_RETRIES) setTimeout(() => setAttempt(n => n + 1), 1500 * 2 ** attempt + Math.random() * 500); }} />;
 }
 
-type Change = { id: string; favorite?: boolean; premium?: boolean; cover_url?: string | null } | { id: string; removed: true };
+type Change = { id: string; favorite?: boolean; premium?: boolean; organized?: boolean; cover_url?: string | null } | { id: string; removed: true };
 const changeListeners = new Set<(change: Change) => void>();
 
-/** Tell every wall on the page that a video was favorited or deleted somewhere else (a player, the clip list). */
 export function announce(change: Change): void {
   changeListeners.forEach(listener => listener(change));
 }
@@ -101,12 +209,11 @@ export function subscribeMediaChanges(listener: (change: Change) => void) {
   changeListeners.add(listener); return () => { changeListeners.delete(listener); };
 }
 
-/** How far into a video the owner got, as a thin line along the bottom of its cover. */
 export function WatchedBar({ seconds, duration }: { seconds: number | undefined; duration: number | null }) {
   if (!seconds || !duration) return null;
   return (
     <span className="absolute inset-x-0 bottom-0 h-[3px] bg-white/18">
-      <span className="block h-full rounded-r-full bg-gradient-to-r from-gold to-gold-bright shadow-[0_0_8px_rgba(230,198,135,0.65)]" style={{ width: `${Math.min(100, (seconds / duration) * 100)}%` }} />
+      <span className="block h-full rounded-r-full bg-gradient-to-r from-gold to-gold-bright shadow-[0_0_8px_rgba(229,196,132,0.65)]" style={{ width: `${Math.min(100, (seconds / duration) * 100)}%` }} />
     </span>
   );
 }
@@ -116,13 +223,12 @@ export function BlurToggle() {
   return (
     <motion.button type="button" onClick={() => setPref("coverBlur", !prefs.coverBlur)} aria-label={prefs.coverBlur ? "显示封面" : "模糊封面"}
       whileTap={{ scale: 0.88 }} transition={SPRING_TAP}
-      className={`ios-card grid size-10 shrink-0 place-items-center rounded-full transition-colors ${prefs.coverBlur ? "border-gold/35 text-gold-bright" : "text-muted hover:text-ink"}`}>
+      className={`ios-card grid size-10 shrink-0 place-items-center rounded-full transition-colors ${prefs.coverBlur ? "border-gold/40 text-gold-bright" : "text-muted hover:text-ink"}`}>
       {prefs.coverBlur ? <EyeSlashIcon size={19} weight="fill" /> : <EyeIcon size={19} />}
     </motion.button>
   );
 }
 
-/** Pages of media from a cursor- or offset-based endpoint, loaded on demand. */
 export function usePages(fetchPage: (cursor: string | null, offset: number) => Promise<{ items: Media[]; has_more: boolean; next_cursor?: string | null }>, key: string) {
   const [items, setItems] = useState<Media[]>([]);
   const [done, setDone] = useState(false);

@@ -2,7 +2,15 @@
 
 export class Unauthorized extends Error {}
 
-export interface Variant { id: string; height: number | null; label: string | null; stream_url: string }
+export interface Variant {
+  id: string;
+  height: number | null;
+  width?: number | null;
+  bitrate_bps?: number | null;
+  size_bytes?: number | null;
+  label: string | null;
+  stream_url: string;
+}
 
 export interface Media {
   premium?: boolean;

@@ -5,12 +5,27 @@ import { clipPreloadReady, resolveClipRange } from "../player/clipRange";
 
 export type BufferReadiness = (id: string, src: string, ready: boolean) => void;
 
+/** Estimate stream bitrate accurately for both original streams and 480p renditions. */
+export function estimateBytesPerSecond(media: Media, src: string): number {
+  if (src === media.stream_url) {
+    return media.duration_seconds && media.size_bytes ? media.size_bytes / media.duration_seconds : 0;
+  }
+  const variant = media.variants.find(v => v.stream_url === src);
+  if (variant?.bitrate_bps && variant.bitrate_bps > 0) return variant.bitrate_bps / 8;
+  if (variant?.size_bytes && media.duration_seconds && media.duration_seconds > 0) {
+    return variant.size_bytes / media.duration_seconds;
+  }
+  // Low-res rendition fallback (~2.5 Mbps): prevents the 12-second zero-bitrate penalty on 480p clips.
+  return variant ? 320 * 1024 : 0;
+}
+
 export function useFeedPlayback(video: RefObject<HTMLVideoElement | null>, options: {
   media: Media; src: string; active: boolean; mounted: boolean; eager: boolean; paused: boolean; locked: boolean;
   onPause: () => void; onBufferReadiness?: BufferReadiness; original?: boolean;
 }) {
   const { media, src, active, mounted, eager, paused, locked, onPause, onBufferReadiness, original = false } = options;
   const preloadStarted = useRef(false);
+  const [buffered, setBuffered] = useState(0);
   const [visible, setVisible] = useState(document.visibilityState !== "hidden");
   useEffect(() => {
     const change = () => setVisible(document.visibilityState !== "hidden");
@@ -62,14 +77,13 @@ export function useFeedPlayback(video: RefObject<HTMLVideoElement | null>, optio
     const el = video.current;
     if (!active || !el || !mounted) return;
     let allowed = false;
-    // The original's bitrate is not the selected rendition's bitrate.
-    const bytesPerSecond = src === media.stream_url && media.duration_seconds
-      ? (media.size_bytes ?? 0) / media.duration_seconds : 0;
+    const bytesPerSecond = estimateBytesPerSecond(media, src);
     const publish = (ready: boolean) => {
       allowed = ready;
       onBufferReadiness?.(media.clip?.key ?? media.id, src, ready);
     };
     const update = () => {
+      setBuffered(bufferedAhead(el));
       const range = media.clip ? resolveClipRange(media.clip, el.duration) : null;
       publish(el.currentSrc === new URL(src, document.baseURI).href
         && !paused && !locked && visible && !el.paused
@@ -85,8 +99,8 @@ export function useFeedPlayback(video: RefObject<HTMLVideoElement | null>, optio
       updates.forEach(event => el.removeEventListener(event, update));
       waits.forEach(event => el.removeEventListener(event, wait));
     };
-  }, [video, active, mounted, paused, locked, visible, src, media.id,
+  }, [video, active, mounted, paused, locked, visible, src, media.id, media.variants,
     media.stream_url, media.size_bytes, media.duration_seconds, media.clip?.key, media.clip?.start, media.clip?.end, original, onBufferReadiness]);
 
-  return { attachVideo, visible };
+  return { attachVideo, visible, buffered };
 }

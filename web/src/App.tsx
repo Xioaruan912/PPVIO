@@ -167,7 +167,7 @@ export function App() {
         <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={SPRING_STAGE}
           className="pointer-events-none fixed inset-x-0 bottom-0 z-10 flex justify-center px-4 pb-[max(0.85rem,env(safe-area-inset-bottom))] pt-2">
           <nav aria-label="导航"
-            className={`pointer-events-auto flex w-full max-w-[344px] items-center justify-between rounded-full p-1.5 transition-all duration-300 ${tab === "feed" ? "glass-dock-cinema" : "glass-dock"}`}>
+            className={`pointer-events-auto flex w-full max-w-[344px] items-center justify-between rounded-full p-1.5 transition-[background-color,box-shadow,border-color] duration-300 ${tab === "feed" ? "glass-dock-cinema" : "glass-dock"}`}>
             <NavItem label="刷" active={tab === "feed"} onClick={() => setTab("feed")}><PlayIcon size={21} weight={tab === "feed" ? "fill" : "regular"} /></NavItem>
             <NavItem label="片库" active={tab === "library"} onClick={() => setTab("library")}><SquaresFourIcon size={21} weight={tab === "library" ? "fill" : "regular"} /></NavItem>
             <NavItem label="标签" active={tab === "favorites"} onClick={() => setTab("favorites")}><TagIcon size={21} weight={tab === "favorites" ? "fill" : "regular"} /></NavItem>
@@ -184,9 +184,10 @@ export function App() {
 function OverlaySheet({ children }: { children: React.ReactNode }) {
   return (
     <motion.div className="cinema-aura fixed inset-0 z-30 overflow-y-auto bg-bg"
-      initial={{ opacity: 0, y: 28, scale: 0.985 }}
+      style={{ backgroundColor: "#050507" }}
+      initial={{ opacity: 0, y: 24, scale: 0.985 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 22, scale: 0.985 }}
+      exit={{ opacity: 0, y: 18, scale: 0.985 }}
       transition={SPRING_STAGE}>
       {children}
     </motion.div>

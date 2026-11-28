@@ -1,10 +1,14 @@
-import { CaretLeftIcon, CheckCircleIcon, MinusCircleIcon, PlusCircleIcon } from "@phosphor-icons/react";
+import { CaretLeftIcon, CheckCircleIcon, CheckIcon, LightningIcon, MinusCircleIcon, PlusCircleIcon } from "@phosphor-icons/react";
+import { motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Media, type Tag } from "../api";
 import { curationApi, type CurationChange } from "../curationApi";
 import { usePrefs } from "../prefs";
 import { BlurToggle, Cover, formatDuration } from "../ui/Grid";
 import { Sheet } from "../ui/Sheet";
+import { FlutedPrivacyShield } from "../ui/CinemaChrome";
+import { SPRING_PILL } from "../ui/motion";
+import { haptic } from "../ui/haptics";
 import type { Open } from "./Library";
 
 const RECENT_KEY = "ppvio-web:curation-tag-groups";
@@ -111,10 +115,11 @@ export function Curation({ onBack, onOpen }: { onBack: () => void; onOpen: Open 
     if (mutation.current) return;
     setTagAction(null); setSaving(false); setActionError(false);
   };
-  const apply = async (change: CurationChange) => {
+  const apply = async (change: CurationChange, explicitTagGroup?: number[]) => {
     const page = pages.current;
     if (!page?.active || mutation.current || !selected.length || selected.length > 100) return;
-    if ((change.add_tags || change.remove_tags) && (!tagIds.length || tagIds.length > 20)) return;
+    const effectiveTags = explicitTagGroup ?? tagIds;
+    if ((change.add_tags || change.remove_tags) && (!effectiveTags.length || effectiveTags.length > 20)) return;
     const current = { controller: new AbortController(), page }; mutation.current = current;
     setSaving(true); setActionError(false);
     try {
@@ -122,8 +127,8 @@ export function Curation({ onBack, onOpen }: { onBack: () => void; onOpen: Open 
       if (mutation.current !== current || pages.current !== page || !page.active) return;
       const group = change.add_tags ?? change.remove_tags;
       if (group?.length) setRecent(rememberTagGroup(group, tags.map(tag => tag.id)));
+      haptic(10);
       mutation.current = null; setSaving(false); setTagAction(null);
-      // A changed status removes rows from this offset query, so load a fresh first page.
       restart();
     } catch {
       if (mutation.current === current && page.active && pages.current === page) setActionError(true);
@@ -133,6 +138,7 @@ export function Curation({ onBack, onOpen }: { onBack: () => void; onOpen: Open 
   };
   const toggle = (id: string) => {
     if (saving) return;
+    haptic(5);
     setSelected(ids => ids.includes(id) ? ids.filter(item => item !== id) : ids.length < 100 ? [...ids, id] : ids);
   };
   const openTags = (action: TagAction) => { setTagIds([]); setActionError(false); setTagAction(action); void loadTags(); };
@@ -141,81 +147,138 @@ export function Curation({ onBack, onOpen }: { onBack: () => void; onOpen: Open 
   return <main className="mx-auto min-h-dvh max-w-6xl px-3.5 pb-32 pt-[max(1.25rem,env(safe-area-inset-top))]">
     <header className="mb-4 flex items-center gap-2.5 px-0.5">
       <button type="button" onClick={onBack} aria-label="返回片库" className="ios-card pressable grid size-10 shrink-0 place-items-center rounded-full text-ink"><CaretLeftIcon size={19} weight="bold" /></button>
-      <h1 className="min-w-0 flex-1 text-[26px] font-semibold tracking-[-0.03em] text-ink">整理片库</h1><BlurToggle />
+      <h1 className="min-w-0 flex-1 text-[28px] font-semibold tracking-[-0.035em] text-ink">整理工作台</h1>
+      <BlurToggle />
     </header>
     <div role="tablist" aria-label="整理状态" className="ios-card mb-3 flex gap-1 rounded-full p-1">
-      {([false, true] as const).map(value => <button key={String(value)} type="button" role="tab" aria-label={value ? "已整理" : "待整理"}
-        aria-selected={organized === value} disabled={saving} onClick={() => setOrganized(value)}
-        className={`pressable min-h-10 flex-1 rounded-full text-[14px] transition-colors ${organized === value ? "bg-raised font-semibold text-ink shadow-[0_2px_8px_rgba(0,0,0,0.3)]" : "text-muted"}`}>{value ? "已整理" : "待整理"}</button>)}
+      {([false, true] as const).map(value => (
+        <button key={String(value)} type="button" role="tab" aria-label={value ? "已整理" : "待整理"}
+          aria-selected={organized === value} disabled={saving} onClick={() => setOrganized(value)}
+          className={`relative min-h-10 flex-1 rounded-full text-[14px] transition-colors ${organized === value ? "font-semibold text-gold-bright" : "text-muted hover:text-ink"}`}>
+          {organized === value && (
+            <motion.span layoutId="ppvio-curation-tab" transition={SPRING_PILL}
+              className="absolute inset-0 rounded-full border border-gold/28 bg-gradient-to-b from-gold/20 via-white/[0.08] to-white/[0.03]" />
+          )}
+          <span className="relative z-10">{value ? "已整理" : "待整理"}</span>
+        </button>
+      ))}
     </div>
-    <p className="mb-3 px-1 text-[13px] text-muted">整理状态与看过记录分开保存。先选择视频，再批量操作。</p>
-    <section aria-label="批量整理" className="glass-header sticky top-0 z-10 mb-3 space-y-2 rounded-[18px] py-2">
+    <p className="mb-3 px-1 text-[13px] text-muted">点选卡片批量归类；支持一键套用常用标签组合并同步标为完成。</p>
+
+    <section aria-label="批量整理" className="glass-dock sticky top-2 z-10 mb-4 space-y-2.5 rounded-[20px] p-3">
       <div className="flex flex-wrap items-center gap-2 text-[13px]">
-        <span role="status" className="mr-auto font-medium tabular-nums text-ink">已选 {selected.length} / 100</span>
+        <span role="status" className="film-slate mr-auto rounded-full border border-gold/30 bg-gold/12 px-2.5 py-1 text-[11.5px] font-semibold text-gold-bright">
+          已选 {selected.length} / 100
+        </span>
         <button type="button" aria-label="选择当前已加载" disabled={saving || !items.length || selected.length >= 100}
           onClick={() => setSelected(ids => [...new Set([...ids, ...items.map(item => item.id)])].slice(0, 100))}
-          className="ios-card pressable min-h-10 rounded-full px-3.5 font-medium disabled:opacity-40">选择已加载</button>
+          className="glass-pill pressable min-h-9 rounded-full px-3.5 text-[12.5px] font-medium disabled:opacity-40">选择已加载</button>
         <button type="button" aria-label="清空选择" disabled={saving || !selected.length} onClick={() => setSelected([])}
-          className="ios-card pressable min-h-10 rounded-full px-3.5 font-medium disabled:opacity-40">清空</button>
+          className="glass-pill pressable min-h-9 rounded-full px-3.5 text-[12.5px] font-medium disabled:opacity-40">清空</button>
       </div>
+
+      {/* Instant 1-tap macro combos when videos are selected */}
+      {recent.length > 0 && selected.length > 0 && !organized && (
+        <div className="flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none]">
+          <span className="film-slate shrink-0 text-[10px] text-gold/85">一键归类</span>
+          {recent.slice(0, 3).map(group => {
+            const label = group.map(id => tags.find(t => t.id === id)?.name).filter(Boolean).join(" + ");
+            if (!label) return null;
+            return (
+              <button key={`macro-${group.join(",")}`} type="button" disabled={saving}
+                onClick={() => void apply({ add_tags: group, organized: true }, group)}
+                className="pressable inline-flex h-8 shrink-0 items-center gap-1 rounded-full border border-gold/35 bg-gold/14 px-2.5 text-[12px] font-medium text-gold-bright hover:bg-gold/24 disabled:opacity-45">
+                <LightningIcon size={12} weight="fill" className="text-gold" />
+                <span className="max-w-[160px] truncate">{label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       <div className="grid grid-cols-3 gap-2 text-[13px]">
         <button type="button" aria-label="追加标签" disabled={saving || !selected.length || !tagsReady} onClick={() => openTags("add")}
-          className="ios-card pressable flex min-h-11 items-center justify-center gap-1 rounded-full font-medium disabled:opacity-40"><PlusCircleIcon size={17} />追加标签</button>
+          className="glass-pill pressable flex min-h-10.5 items-center justify-center gap-1 rounded-full font-medium disabled:opacity-40"><PlusCircleIcon size={16} />追加标签</button>
         <button type="button" aria-label="移除标签" disabled={saving || !selected.length || !tagsReady} onClick={() => openTags("remove")}
-          className="ios-card pressable flex min-h-11 items-center justify-center gap-1 rounded-full font-medium disabled:opacity-40"><MinusCircleIcon size={17} />移除标签</button>
+          className="glass-pill pressable flex min-h-10.5 items-center justify-center gap-1 rounded-full font-medium disabled:opacity-40"><MinusCircleIcon size={16} />移除标签</button>
         <button type="button" aria-label={organized ? "移回待整理" : "标记完成"} disabled={saving || !selected.length}
           onClick={() => void apply({ organized: !organized })}
-          className="pressable flex min-h-11 items-center justify-center gap-1 rounded-full bg-ink font-semibold text-bg disabled:opacity-40">
-          <CheckCircleIcon size={17} />{saving && !tagAction ? "保存中…" : organized ? "移回待整理" : "标记完成"}</button>
+          className="glass-pill-gold pressable flex min-h-10.5 items-center justify-center gap-1 rounded-full font-semibold disabled:opacity-40">
+          <CheckCircleIcon size={16} weight="bold" />{saving && !tagAction ? "保存中…" : organized ? "移回待整理" : "标记完成"}
+        </button>
       </div>
     </section>
+
     {tagsError && <div role="alert" className="mb-3 text-[13px] text-accent">标签加载失败。
       <button type="button" aria-label="重试整理标签" onClick={() => void loadTags()} className="ml-2 min-h-10 underline">重试标签</button></div>}
     {actionError && !tagAction && <p role="alert" className="mb-3 text-[13px] text-accent">操作失败，已保留选择，请重试。</p>}
-    <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4 lg:grid-cols-6">
-      {items.map((item, index) => <div key={item.id} className="min-w-0 rounded-[10px] bg-surface">
-        <button type="button" aria-label={`播放第 ${index + 1} 个视频`} onClick={() => onOpen(items, index, () => void load())}
-          className="relative block aspect-[3/4] w-full overflow-hidden rounded-[10px] bg-surface">
-          {item.cover_url && <Cover src={item.cover_url} className={`size-full object-cover ${prefs.coverBlur ? "blur-xl scale-110" : ""}`} />}
-          <span className="absolute bottom-1 right-1.5 rounded bg-black/55 px-1 text-[11px] tabular-nums text-white">{formatDuration(item.duration_seconds)}</span>
-        </button>
-        <label className="flex min-h-11 items-center justify-center gap-2 text-[13px]">
-          <input type="checkbox" aria-label={`选择第 ${index + 1} 个视频`} checked={selected.includes(item.id)}
-            disabled={saving || (!selected.includes(item.id) && selected.length >= 100)} onChange={() => toggle(item.id)} />选择
-        </label>
-      </div>)}
+
+    <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4 lg:grid-cols-6">
+      {items.map((item, index) => {
+        const isChecked = selected.includes(item.id);
+        return (
+          <div key={item.id} className={`luxury-card group relative min-w-0 rounded-[15px] transition-transform duration-200 ${isChecked ? "ring-2 ring-gold-bright ring-offset-1 ring-offset-bg" : ""}`}>
+            <button type="button" aria-label={`播放第 ${index + 1} 个视频`} onClick={() => onOpen(items, index, () => void load())}
+              className="relative block aspect-[3/4] w-full overflow-hidden bg-surface">
+              {item.cover_url && <Cover src={item.cover_url} className={`film-grade size-full object-cover ${prefs.coverBlur ? "blur-xl scale-110" : ""}`} />}
+              <FlutedPrivacyShield active={prefs.coverBlur} />
+              <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-black/80 to-transparent" />
+              <span className="glass-pill film-slate absolute bottom-1.5 right-1.5 rounded-full px-2 py-0.5 text-[10px] text-ink">{formatDuration(item.duration_seconds)}</span>
+            </button>
+            <label className={`flex min-h-10 cursor-pointer items-center justify-center gap-1.5 border-t border-line px-2 text-[12.5px] font-medium transition-colors ${isChecked ? "bg-gold/18 text-gold-bright" : "bg-surface/90 text-muted hover:text-ink"}`}>
+              <input type="checkbox" aria-label={`选择第 ${index + 1} 个视频`} checked={isChecked}
+                disabled={saving || (!isChecked && selected.length >= 100)} onChange={() => toggle(item.id)} className="sr-only" />
+              <span aria-hidden="true" className={`grid size-4.5 place-items-center rounded-full border ${isChecked ? "border-gold-bright bg-gold text-bg" : "border-line-strong text-transparent"}`}>
+                <CheckIcon size={11} weight="bold" />
+              </span>
+              <span>{isChecked ? "已选" : "选择"}</span>
+            </label>
+          </div>
+        );
+      })}
     </div>
+
     {done && !items.length && <p className="py-20 text-center text-[15px] text-muted">{organized ? "还没有已整理的视频" : "暂时没有待整理的视频"}</p>}
     {loadError ? <div role="alert" className="flex items-center justify-center gap-3 py-6 text-[14px] text-muted">列表加载失败
-      <button type="button" aria-label="重试整理列表" onClick={() => void load(true)} className="min-h-11 rounded-full bg-surface px-4 text-ink">重试</button>
+      <button type="button" aria-label="重试整理列表" onClick={() => void load(true)} className="ios-card pressable min-h-11 rounded-full px-4 text-ink">重试</button>
     </div> : !done && <div className="flex justify-center py-5">
       <button type="button" aria-label="加载更多整理视频" disabled={loading} onClick={() => void load()}
-        className="min-h-11 rounded-full bg-surface px-6 text-[14px] disabled:opacity-50">{loading ? "正在加载…" : "加载更多"}</button>
+        className="ios-card pressable min-h-11 rounded-full px-6 text-[14px] font-medium text-ink disabled:opacity-50">{loading ? "正在加载…" : "加载更多"}</button>
     </div>}
+
     <Sheet open={tagAction !== null} onClose={closeTags} title={tagLabel}>
       <div className="space-y-4 px-3">
         <p className="text-[13px] text-muted">对已选的 {selected.length} 个视频{tagAction === "add" ? "追加" : "移除"}所选标签，其他标签保持不变。最多 20 个。</p>
         {recent.length > 0 && <section>
-          <h3 className="mb-2 text-[13px] font-semibold">最近标签组</h3>
+          <h3 className="mb-2 text-[13px] font-semibold text-ink">最近标签组</h3>
           <div className="flex flex-wrap gap-2">{recent.map(group => {
             const label = group.map(id => tags.find(tag => tag.id === id)?.name).filter(Boolean).join("、");
             return <button key={group.join(",")} type="button" aria-label={`使用标签组 ${label}`} disabled={saving} onClick={() => setTagIds([...group])}
-              className="min-h-10 max-w-full truncate rounded-full bg-raised px-3 text-[13px] disabled:opacity-40">{label}</button>;
+              className="glass-pill pressable min-h-9 max-w-full truncate rounded-full px-3 text-[13px] text-gold-bright disabled:opacity-40">{label}</button>;
           })}</div>
         </section>}
         <fieldset disabled={saving}>
-          <legend className="mb-2 text-[14px] font-semibold">选择标签 · {tagIds.length}/20</legend>
-          <div className="grid grid-cols-2 gap-x-3">{tags.map(tag => <label key={tag.id} className="flex min-h-11 min-w-0 items-center gap-2 text-[14px]">
-            <input type="checkbox" aria-label={`批量标签 ${tag.name}`} checked={tagIds.includes(tag.id)} disabled={!tagIds.includes(tag.id) && tagIds.length >= 20}
-              onChange={() => setTagIds(ids => ids.includes(tag.id) ? ids.filter(id => id !== tag.id) : ids.length < 20 ? [...ids, tag.id] : ids)} />
-            <span className="truncate">{tag.name}</span></label>)}</div>
+          <legend className="mb-2 text-[14px] font-semibold text-ink">选择标签 · {tagIds.length}/20</legend>
+          <div className="grid grid-cols-2 gap-2">{tags.map(tag => {
+            const checked = tagIds.includes(tag.id);
+            return (
+              <label key={tag.id} className={`pressable flex min-h-11 min-w-0 cursor-pointer items-center gap-2 rounded-[14px] border px-3 text-[13.5px] transition-colors ${checked ? "border-gold/55 bg-gold/18 font-semibold text-gold-bright" : "border-line bg-white/[0.03] text-ink/90"}`}>
+                <input type="checkbox" aria-label={`批量标签 ${tag.name}`} checked={checked} disabled={!checked && tagIds.length >= 20}
+                  onChange={() => setTagIds(ids => ids.includes(tag.id) ? ids.filter(id => id !== tag.id) : ids.length < 20 ? [...ids, tag.id] : ids)} className="sr-only" />
+                <span aria-hidden="true" className={`grid size-4.5 shrink-0 place-items-center rounded-full border ${checked ? "border-gold-bright bg-gold text-bg" : "border-line-strong text-transparent"}`}>
+                  <CheckIcon size={11} weight="bold" />
+                </span>
+                <span className="truncate">{tag.name}</span>
+              </label>
+            );
+          })}</div>
           {!tags.length && <p className="text-[13px] text-muted">还没有标签，可在播放器中添加。</p>}
         </fieldset>
         {actionError && <p role="alert" className="text-[13px] text-accent">操作失败，已保留选择，请重试。</p>}
-        <div className="sticky bottom-0 flex gap-2 bg-surface py-2">
-          <button type="button" aria-label="取消批量标签" disabled={saving} onClick={closeTags} className="min-h-11 flex-1 rounded-full bg-raised text-[14px] disabled:opacity-40">取消</button>
+        <div className="sticky bottom-0 flex gap-2 bg-[#101116]/95 py-2 backdrop-blur-md">
+          <button type="button" aria-label="取消批量标签" disabled={saving} onClick={closeTags} className="glass-pill pressable min-h-11 flex-1 rounded-full text-[14px] disabled:opacity-40">取消</button>
           <button type="button" aria-label={`确认${tagLabel}`} disabled={saving || !tagIds.length} onClick={() => void apply(tagAction === "add" ? { add_tags: tagIds } : { remove_tags: tagIds })}
-            className="min-h-11 flex-1 rounded-full bg-ink text-[14px] font-semibold text-bg disabled:opacity-40">{saving ? "保存中…" : tagLabel}</button>
+            className="glass-pill-gold pressable min-h-11 flex-1 rounded-full text-[14px] font-semibold disabled:opacity-40">{saving ? "保存中…" : tagLabel}</button>
         </div>
       </div>
     </Sheet>

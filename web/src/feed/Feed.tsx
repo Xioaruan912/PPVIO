@@ -1,19 +1,21 @@
-import { ArrowDownIcon, ArrowsClockwiseIcon, CaretLeftIcon, TimerIcon, TrashIcon } from "@phosphor-icons/react";
+import { ArrowDownIcon, ArrowsClockwiseIcon, CaretLeftIcon, SparkleIcon, TimerIcon, TrashIcon } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, chooseStream, Unauthorized, type Media } from "../api";
 import { setPref, usePrefs } from "../prefs";
 import { useLocked } from "../ui/privacy";
-import { announce } from "../ui/Grid";
+import { announce, subscribeMediaChanges } from "../ui/Grid";
 import { toast } from "../ui/toast";
 import { FeedItem } from "./FeedItem";
 import type { BufferReadiness } from "./useFeedPlayback";
 import { curationApi } from "../curationApi";
 import { FeedPreferencesButton } from "../ui/FeedPreferences";
 import { QuickTagPanel } from "../ui/QuickTags";
-import { subscribeMediaChanges } from "../ui/Grid";
 import { SPRING_SHEET } from "../ui/motion";
 import { haptic } from "../ui/haptics";
+import { ensureGsap, gsap } from "../ui/gsap";
+import { OdometerIndex, SlotButton } from "../ui/CinemaChrome";
+import { prewarmMedia } from "../ui/prewarm";
 
 /** Append new clips, never one already in the list. */
 export function mergeFeed(current: Media[], incoming: Media[]): Media[] {
@@ -22,8 +24,7 @@ export function mergeFeed(current: Media[], incoming: Media[]): Media[] {
 }
 
 /**
- * Clips one per screen, swiped vertically. Shared by the feed and by any wall a
- * clip is opened from (library, favorites, a folder).
+ * Clips one per screen, swiped vertically with GSAP scroll-scrubbed depth and 1:1 triage gestures.
  */
 export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, onRefresh, organize = false, enabled = true, startAt }: {
   items: Media[];
@@ -32,10 +33,11 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, onRef
   onNearEnd?: () => void;
   onClose?: () => void;
   onRefresh?: () => void;
-  /** 整理模式: big delete / favorite / skip buttons for a quick clean-up pass. */
+  /** 整理模式: swipe-to-triage gestures + 1-tap macro combos + inline tag creation. */
   organize?: boolean;
   enabled?: boolean; startAt?: number;
 }) {
+  ensureGsap();
   const [active, setActive] = useState(start);
   const [pullY, setPullY] = useState(0);
   const pullStart = useRef<number | null>(null);
@@ -58,6 +60,13 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, onRef
   }, []);
   const preloadNext = preloadFor?.id === currentKey && preloadFor?.src === currentSrc;
 
+  // Aggressive lookahead prewarming: warm VPS disk cache & opening head for active+1 and active+2 immediately.
+  useEffect(() => {
+    if (!enabled || locked) return;
+    prewarmMedia(items[active + 1], prefs.lowRes, { rangeHead: true });
+    prewarmMedia(items[active + 2], prefs.lowRes, { rangeHead: false });
+  }, [active, items, enabled, locked, prefs.lowRes]);
+
   // Open on the clip that was tapped.
   useLayoutEffect(() => {
     const el = container.current;
@@ -65,6 +74,42 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, onRef
   }, [start, enabled]);
 
   useEffect(() => { if (onNearEnd && active >= items.length - 3) onNearEnd(); }, [active, items.length, onNearEnd]);
+
+  // GSAP scroll-scrubbed depth choreography: receding outgoing plate, unmasking incoming plate.
+  useEffect(() => {
+    const scroller = container.current;
+    if (!scroller || !enabled || typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    let frame = 0;
+    const updateDepth = () => {
+      frame = 0;
+      const vh = scroller.clientHeight || window.innerHeight || 1;
+      const top = scroller.scrollTop;
+      const mobile = window.innerWidth < 768;
+      scroller.querySelectorAll<HTMLElement>("[data-index]").forEach(row => {
+        const stage = row.querySelector<HTMLElement>("[data-feed-stage]");
+        if (!stage) return;
+        const idx = Number(row.dataset.index);
+        const dist = Math.min(1, Math.abs(top - idx * vh) / vh);
+        if (dist < 0.005) {
+          gsap.set(stage, { scale: 1, opacity: 1 });
+        } else {
+          const minScale = mobile ? 0.94 : 0.91;
+          gsap.set(stage, {
+            scale: 1 - dist * (1 - minScale),
+            opacity: 1 - dist * 0.58,
+          });
+        }
+      });
+    };
+    const onScroll = () => { if (!frame) frame = requestAnimationFrame(updateDepth); };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    updateDepth();
+    return () => {
+      scroller.removeEventListener("scroll", onScroll);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [enabled, items.length]);
 
   // The clip that fills most of the screen is the active one.
   useEffect(() => {
@@ -81,19 +126,6 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, onRef
     root.querySelectorAll<HTMLElement>("[data-index]").forEach(el => observer.observe(el));
     return () => observer.disconnect();
   }, [items.length]);
-
-  // On a computer the page does not scroll the clip list by itself: ↑/↓ move a clip.
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      const el = container.current;
-      const step = event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0;
-      if (!enabled || !el || !step || event.metaKey || event.ctrlKey || event.altKey || event.target instanceof HTMLInputElement) return;
-      event.preventDefault();
-      el.scrollBy({ top: step * el.clientHeight, behavior: "smooth" });
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [enabled]);
 
   const setFavorite = useCallback((id: string, on: boolean) => {
     setItems(list => list.map(item => item.id === id ? { ...item, favorite: on } : item));
@@ -124,21 +156,53 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, onRef
     }, prefs.autoSwapSeconds * 1000);
     return () => clearInterval(timer);
   }, [enabled, organize, locked, prefs.autoSwapSeconds, active, items.length, next]);
+
   const [curating, setCurating] = useState(false);
-  const complete = async () => {
+  const complete = useCallback(async (addTags?: number[], macroLabel?: string) => {
     if (!current || curating) return;
+    const targetId = current.id;
+    const targetKey = current.clip?.key ?? current.id;
     setCurating(true);
     try {
-      await curationApi.batch([current.id], { organized: true });
-      setItems(list => list.map(item => item.id === current.id ? { ...item, organized: true } : item));
-      toast("已整理完成");
-      if (currentSource.current.id === (current.clip?.key ?? current.id) && currentSource.current.enabled) next();
+      await curationApi.batch([targetId], addTags?.length ? { add_tags: addTags, organized: true } : { organized: true });
+      setItems(list => list.map(item => item.id === targetId ? { ...item, organized: true } : item));
+      toast(macroLabel ? `已一键归入「${macroLabel}」` : "已整理完成", {
+        label: "撤销",
+        run: () => {
+          void curationApi.batch([targetId], addTags?.length ? { remove_tags: addTags, organized: false } : { organized: false })
+            .then(() => {
+              setItems(list => list.map(item => item.id === targetId ? { ...item, organized: false } : item));
+              toast("已撤销整理状态");
+            });
+        },
+      }, 5000);
+      if (currentSource.current.id === targetKey && currentSource.current.enabled) next();
     } catch { toast("整理未保存，请重试"); }
     finally { setCurating(false); }
-  };
+  }, [current, curating, next, setItems]);
+
+  // Keyboard navigation + fast desktop triage shortcuts (D/Enter = keep+next, S/ArrowRight = skip).
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const el = container.current;
+      if (!enabled || !el || event.metaKey || event.ctrlKey || event.altKey || event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        el.scrollBy({ top: (event.key === "ArrowDown" ? 1 : -1) * el.clientHeight, behavior: "smooth" });
+      } else if (organize && (event.key === "d" || event.key === "D" || event.key === "Enter")) {
+        event.preventDefault();
+        void complete();
+      } else if (organize && (event.key === "s" || event.key === "S" || event.key === "ArrowRight")) {
+        event.preventDefault();
+        next();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [enabled, organize, complete, next]);
 
   return (
-    <div ref={container} className="h-dvh snap-y snap-mandatory overflow-y-scroll [scrollbar-width:none]"
+    <div ref={container} className="ppvio-feed-scroller h-dvh snap-y snap-mandatory overflow-y-scroll [scrollbar-width:none]"
       onTouchStart={e => { if (onRefresh && (container.current?.scrollTop ?? 0) <= 2) pullStart.current = e.touches[0]?.clientY ?? null; }}
       onTouchMove={e => {
         if (!onRefresh || pullStart.current === null || (container.current?.scrollTop ?? 0) > 2) return;
@@ -157,37 +221,54 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, onRef
           </span>
         </div>
       )}
+
+      {/* Center Film-Slate Mechanical Odometer */}
+      {items.length > 0 && (
+        <div className="pointer-events-none fixed inset-x-0 top-[max(0.92rem,env(safe-area-inset-top))] z-20 hidden justify-center sm:flex">
+          <div className="glass-pill inline-flex h-8.5 items-center gap-2 rounded-full px-3.5">
+            <OdometerIndex current={active + 1} total={items.length} />
+            {organize && <span className="text-[11px] font-medium text-ink/70">· 右滑留存 / 左滑跳过</span>}
+          </div>
+        </div>
+      )}
+
       <AnimatePresence>
         {organize && current && (
           <motion.div key="organize-dock"
-            initial={{ opacity: 0, y: 28, scale: 0.96 }}
+            initial={{ opacity: 0, y: 24, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 24, scale: 0.96 }}
+            exit={{ opacity: 0, y: 20, scale: 0.96 }}
             transition={SPRING_SHEET}
             className="fixed inset-x-0 bottom-[calc(5.6rem+env(safe-area-inset-bottom))] z-20 mx-auto max-w-md px-3">
-            <div className="glass-dock overflow-hidden rounded-[24px] text-white">
+            <div className="glass-dock overflow-hidden rounded-[22px] text-ink">
+              <div className="flex items-center justify-between border-b border-line px-3.5 py-2 text-[11px] text-muted">
+                <span className="inline-flex items-center gap-1.5 font-medium text-gold-bright">
+                  <SparkleIcon size={13} weight="fill" />极速分拣台
+                </span>
+                <span>画面右滑留存 · 左滑跳过</span>
+              </div>
               <QuickTagPanel
                 key={current.id}
                 media={current}
                 compact
                 onDone={() => void complete()}
+                onApplyMacro={(tagIds, label) => void complete(tagIds, label)}
                 doneLabel={curating ? "保存整理中…" : "完成下一条"}
                 finishing={curating}
                 headerMeta={
-                  <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-gold/30 bg-gold/14 px-2.5 py-1 text-[12px] font-semibold tabular-nums text-gold-bright">
-                    <span className="size-1.5 rounded-full bg-gold" aria-hidden="true" />
-                    {active + 1}/{items.length}
+                  <span className="inline-flex shrink-0 items-center rounded-full border border-gold/30 bg-gold/12 px-2.5 py-1">
+                    <OdometerIndex current={active + 1} total={items.length} />
                   </span>
                 }
                 footerLeft={
                   <>
                     <button type="button" aria-label="删除" disabled={!current.deletable} onClick={() => void remove(current)}
-                      className="pressable flex min-h-11 shrink-0 items-center justify-center gap-1 rounded-full border border-accent/35 bg-accent/15 px-3.5 text-[13px] font-semibold text-accent disabled:opacity-35">
-                      <TrashIcon size={17} weight="bold" />删除
+                      className="pressable flex min-h-11 shrink-0 items-center justify-center gap-1 rounded-full border border-accent/35 bg-accent/14 px-3.5 text-[13px] font-semibold text-accent disabled:opacity-35">
+                      <TrashIcon size={16} weight="bold" />删除
                     </button>
                     <button type="button" aria-label="跳过" onClick={next}
                       className="glass-pill pressable flex min-h-11 shrink-0 items-center justify-center gap-1 rounded-full px-3.5 text-[13px] font-medium text-ink">
-                      <ArrowDownIcon size={17} weight="bold" />跳过
+                      <ArrowDownIcon size={16} weight="bold" />跳过
                     </button>
                   </>
                 }
@@ -198,7 +279,7 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, onRef
       </AnimatePresence>
       {onClose && (
         <button type="button" onClick={onClose} aria-label="返回"
-          className="glass-pill pressable fixed left-3 top-[max(0.75rem,env(safe-area-inset-top))] z-20 grid size-10 place-items-center rounded-full text-white">
+          className="glass-pill pressable fixed left-3 top-[max(0.75rem,env(safe-area-inset-top))] z-20 grid size-10 place-items-center rounded-full text-ink">
           <CaretLeftIcon size={20} weight="bold" />
         </button>
       )}
@@ -206,7 +287,11 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, onRef
         <div key={item.clip?.key ?? item.id} data-index={index}>
           <FeedItem media={item} active={enabled && index === active} mounted={enabled && Math.abs(index - active) <= 1}
             eager={index === active + 1 && preloadNext} onBufferReadiness={onBufferReadiness}
-            onFavorite={setFavorite} onRemove={item.deletable && !item.clip ? remove : undefined} raised={organize} startAt={index === start ? startAt : undefined} />
+            onFavorite={setFavorite} onRemove={item.deletable && !item.clip ? remove : undefined}
+            raised={organize}
+            onTriageKeep={() => void complete()}
+            onTriageSkip={next}
+            startAt={index === start ? startAt : undefined} />
         </div>
       ))}
     </div>
@@ -229,11 +314,16 @@ export function Feed({ onUnauthorized, enabled = true }: { onUnauthorized: () =>
   };
   return <>
     <FeedPreferencesButton className="fixed left-3 top-[max(0.75rem,env(safe-area-inset-top))] z-20" onSaved={() => setRevision(value => value + 1)} />
-    <button type="button" onClick={cycleSwap} aria-label="免手自动轮换" aria-pressed={prefs.autoSwapSeconds > 0}
-      className={`pressable fixed left-[5.6rem] top-[max(0.75rem,env(safe-area-inset-top))] z-20 flex h-10 items-center gap-1 rounded-full px-3 text-[12px] font-semibold ${prefs.autoSwapSeconds > 0 ? "glass-pill-gold" : "glass-pill text-white/90"}`}>
-      <TimerIcon size={15} weight={prefs.autoSwapSeconds > 0 ? "fill" : "bold"} />
-      <span>{prefs.autoSwapSeconds > 0 ? `${prefs.autoSwapSeconds}s` : "自动"}</span>
-    </button>
+    <SlotButton
+      ariaLabel="免手自动轮换"
+      ariaPressed={prefs.autoSwapSeconds > 0}
+      active={prefs.autoSwapSeconds > 0}
+      onClick={cycleSwap}
+      icon={<TimerIcon size={15} weight={prefs.autoSwapSeconds > 0 ? "fill" : "bold"} />}
+      label={prefs.autoSwapSeconds > 0 ? `${prefs.autoSwapSeconds}s` : "自动"}
+      hoverLabel={prefs.autoSwapSeconds > 0 ? "切换" : "定时"}
+      className="fixed left-[5.6rem] top-[max(0.75rem,env(safe-area-inset-top))] z-20 h-10 px-3 text-[12px]"
+    />
     <FeedContent key={revision} onUnauthorized={onUnauthorized} enabled={enabled} onRefresh={shuffle} />
   </>;
 }
@@ -270,10 +360,15 @@ function FeedContent({ onUnauthorized, enabled, onRefresh }: { onUnauthorized: (
   if (state === "empty") return <Centered>当前偏好下没有短视频。可以调整左上角的偏好；新片库请先在设置中扫描视频目录。</Centered>;
   return (
     <>
-      <button type="button" onClick={() => setOrganize(value => !value)} aria-pressed={organize}
-        className={`pressable fixed right-3 top-[max(0.75rem,env(safe-area-inset-top))] z-20 h-10 rounded-full px-4 text-[13px] font-semibold ${organize ? "glass-pill-gold" : "glass-pill text-white"}`}>
-        {organize ? "完成" : "整理"}
-      </button>
+      <SlotButton
+        ariaLabel={organize ? "完成整理" : "开启极速整理"}
+        ariaPressed={organize}
+        active={organize}
+        onClick={() => { haptic(8); setOrganize(value => !value); }}
+        label={organize ? "完成" : "整理"}
+        hoverLabel={organize ? "退出" : "分拣"}
+        className="fixed right-3 top-[max(0.75rem,env(safe-area-inset-top))] z-20 h-10 px-4 text-[13px] font-semibold"
+      />
       <ClipList items={items} setItems={setItems} onNearEnd={load} onRefresh={onRefresh} organize={organize} enabled={enabled} />
     </>
   );

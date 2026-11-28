@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { allowNextPreload, bufferedAhead, preloadHighWater } from "./mediaBuffer";
+import { estimateBytesPerSecond } from "./useFeedPlayback";
+import type { Media } from "../api";
 
 const probe = (end: number, currentTime = 0, duration = 60, playbackRate = 1) => ({
   currentTime, duration, playbackRate, readyState: 4,
@@ -47,5 +49,21 @@ describe("next video preload budget", () => {
     expect(allowNextPreload({ ...probe(15), readyState: 2 }, true)).toBe(false);
     expect(allowNextPreload(probe(15, 0, NaN), false)).toBe(false);
     expect(preloadHighWater(NaN)).toBe(12);
+  });
+
+  it("estimates non-zero bitrate for 480p renditions so next-clip preload is not starved", () => {
+    const item = {
+      id: "m1",
+      stream_url: "/api/v1/media/m1/stream",
+      duration_seconds: 60,
+      size_bytes: 60 * 1024 * 1024,
+      variants: [
+        { id: "v1", height: 480, label: "480p", stream_url: "/api/v1/media/v1/stream", bitrate_bps: 4_000_000 },
+        { id: "v2", height: 360, label: "360p", stream_url: "/api/v1/media/v2/stream" },
+      ],
+    } as unknown as Media;
+    expect(estimateBytesPerSecond(item, "/api/v1/media/m1/stream")).toBe(1024 * 1024);
+    expect(estimateBytesPerSecond(item, "/api/v1/media/v1/stream")).toBe(500_000);
+    expect(estimateBytesPerSecond(item, "/api/v1/media/v2/stream")).toBe(320 * 1024);
   });
 });
