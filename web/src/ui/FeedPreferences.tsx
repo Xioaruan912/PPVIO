@@ -49,8 +49,8 @@ export function FeedPreferencesButton({ onSaved, className = "" }: { onSaved: ()
   };
   return <>
     <button type="button" aria-label="刷流偏好" onClick={() => void load()}
-      className={`glass-pill pressable flex min-h-10 items-center justify-center gap-1.5 rounded-full px-3.5 text-[13px] font-medium text-white ${className}`}>
-      <SlidersHorizontalIcon size={17} weight="bold" /><span>偏好</span>
+      className={`pressable grid size-9 place-items-center rounded-full border border-line bg-surface/70 text-ink/85 hover:border-gold/45 hover:text-ink ${className}`}>
+      <SlidersHorizontalIcon size={17} weight="bold" />
     </button>
     <Sheet open={open} onClose={close} title="刷流偏好">
       <form className="space-y-4 px-3" onSubmit={event => { event.preventDefault(); void save(); }}>

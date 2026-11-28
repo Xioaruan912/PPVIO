@@ -41,9 +41,9 @@ export function QuickTagButton({ media, onSaved, enabled = true, iconOnly = fals
   return <>
     <button type="button" aria-label="标签收藏" title="标签收藏" disabled={!enabled || !visible} onClick={() => setOpenedId(media.id)}
       className={iconOnly
-        ? "glass-pill pressable grid size-11 place-items-center rounded-full text-ink hover:border-gold/40 disabled:opacity-45"
-        : "glass-pill pressable flex size-10 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-full text-[13px] font-medium text-ink disabled:opacity-45 sm:w-auto sm:px-3.5"}>
-      <TagIcon size={iconOnly ? 22 : 18} weight={iconOnly ? "fill" : "regular"} />{!iconOnly && <span className="hidden sm:inline">标签收藏</span>}
+        ? "pressable grid size-9 place-items-center rounded-full border border-line bg-surface/70 text-ink/85 hover:border-gold/45 hover:text-ink disabled:opacity-45"
+        : "pressable flex size-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-line bg-surface/70 text-[13px] font-medium text-ink disabled:opacity-45 sm:w-auto sm:px-3.5"}>
+      <TagIcon size={iconOnly ? 18 : 17} weight={iconOnly ? "regular" : "regular"} />{!iconOnly && <span className="hidden sm:inline">标签</span>}
     </button>
     {open && <Sheet open onClose={() => setOpenedId(null)} title="标签收藏">
       <TagPanel key={media.id} media={media} onSaved={onSaved} onDone={() => setOpenedId(null)} />

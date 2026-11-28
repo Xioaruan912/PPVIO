@@ -1,161 +1,229 @@
-import {
-  CloudIcon, FilmSlateIcon, HardDrivesIcon, ShieldCheckIcon, SignOutIcon, SparkleIcon,
-} from "@phosphor-icons/react";
+import { CaretLeftIcon, CaretRightIcon, SignOutIcon } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
-import { api, type Status, type StorageSettings } from "./api";
+import { api, type Status } from "./api";
 import { usePrefs } from "./prefs";
-import { useBackLayer } from "./ui/navigation";
-import { SPRING_STAGE, SPRING_TAP } from "./ui/motion";
-import { normalizeFolder, PrefToggle, SettingsNavRow, SettingsSection } from "./settings/shared";
+import { useTasteProfile } from "./ratings";
+import { SPRING_PILL, SPRING_STAGE } from "./ui/motion";
+import { normalizeFolder, PrefToggle, SettingsSection } from "./settings/shared";
 import { StoragePage } from "./settings/StoragePage";
 import { PlaybackPage, PrivacyPage } from "./settings/PlaybackPrivacyPages";
 import { MaintenancePage } from "./settings/MaintenancePage";
+import { haptic } from "./ui/haptics";
 
 export { normalizeFolder };
 
-type Subpage = "hub" | "storage" | "playback" | "privacy" | "maintenance";
+type Chapter = "hub" | "storage" | "playback" | "privacy" | "maintenance";
+const CHAPTERS: readonly [Chapter, string][] = [
+  ["hub", "总览"],
+  ["storage", "网盘"],
+  ["playback", "播放"],
+  ["privacy", "隐私"],
+  ["maintenance", "维护"],
+];
 
+/**
+ * Direction A — Single-Viewport Horizontal Chapter Folio for Settings:
+ * - Zero long vertical scrolling page; switches cleanly left/right between 5 focused chapters
+ * - Shows live Taste Recommendation profile summary alongside playback/privacy status
+ */
 export function Settings({ onLoggedOut, onDuplicates }: { onLoggedOut: () => void; onDuplicates: () => void }) {
   const prefs = usePrefs();
-  const [page, setPage] = useState<Subpage>("hub");
-  const [storage, setStorage] = useState<StorageSettings | null>(null);
+  const taste = useTasteProfile();
+  const [page, setPage] = useState<Chapter>("hub");
+  const [dir, setDir] = useState<1 | -1>(1);
   const [status, setStatus] = useState<Status | null>(null);
   const [mode, setMode] = useState<{ mode: "webdav" | "direct"; direct_available: boolean } | null>(null);
   const [watched, setWatched] = useState<{ forget_after_days: number | null; choices: (number | null)[] } | null>(null);
   const [dupes, setDupes] = useState<number | null>(null);
 
-  useBackLayer(page !== "hub", () => setPage("hub"));
-
   useEffect(() => {
-    void api.storage().then(setStorage).catch(() => undefined);
     void api.status().then(setStatus).catch(() => undefined);
     void api.readMode().then(setMode).catch(() => undefined);
     void api.watched().then(setWatched).catch(() => undefined);
     void api.duplicates().then(d => setDupes(d.total)).catch(() => undefined);
   }, []);
 
-  const unreachable = status?.libraries.some(lib => lib.reachable === false) ?? false;
-  const folderCount = storage?.libraries.length ?? 0;
-
-  const openPage = (next: Subpage) => {
+  const currentIdx = CHAPTERS.findIndex(([k]) => k === page);
+  const goTo = (next: Chapter) => {
+    const nextIdx = CHAPTERS.findIndex(([k]) => k === next);
+    if (nextIdx === currentIdx) return;
+    haptic(6);
+    setDir(nextIdx > currentIdx ? 1 : -1);
     setPage(next);
-    window.scrollTo({ top: 0, behavior: "instant" });
   };
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (
+        e.metaKey || e.ctrlKey || e.altKey
+        || e.target instanceof HTMLInputElement
+        || e.target instanceof HTMLTextAreaElement
+        || e.target instanceof HTMLSelectElement
+      ) return;
+      if (e.key === "ArrowRight" && currentIdx < CHAPTERS.length - 1) {
+        e.preventDefault();
+        goTo(CHAPTERS[currentIdx + 1][0]);
+      } else if (e.key === "ArrowLeft" && currentIdx > 0) {
+        e.preventDefault();
+        goTo(CHAPTERS[currentIdx - 1][0]);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [currentIdx]);
+
   return (
-    <main className="mx-auto min-h-dvh max-w-xl overflow-x-clip px-4 pb-32 pt-[max(1.25rem,env(safe-area-inset-top))]">
-      <AnimatePresence mode="popLayout" initial={false}>
-        {page === "hub" ? (
-          <motion.div key="hub"
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0, transition: SPRING_STAGE }}
-            exit={{ opacity: 0, x: -16, transition: { duration: 0.16, ease: "easeOut" } }}>
-            <h1 className="px-1 text-[32px] font-semibold leading-tight tracking-[-0.035em] text-ink">设置</h1>
+    <main className="mx-auto flex h-full w-full max-w-4xl flex-col overflow-hidden px-4 pb-4 pt-4 sm:px-8 sm:pb-5 sm:pt-5">
+      {/* Chapter Header */}
+      <header className="mb-4 flex shrink-0 flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-[22px] font-semibold leading-none tracking-[-0.03em] text-ink sm:text-[28px]">设置</h1>
+        <div className="flex w-full items-center justify-between gap-1 rounded-full border border-line bg-surface/70 p-1 sm:w-auto" role="tablist">
+          {CHAPTERS.map(([key, label]) => {
+            const active = page === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => goTo(key)}
+                className={`relative h-8.5 flex-1 rounded-full px-3 text-[13.5px] transition-colors sm:h-9 sm:flex-none sm:px-4 sm:text-[14px] ${
+                  active ? "font-semibold text-bg" : "text-muted hover:text-ink"
+                }`}
+              >
+                {active && (
+                  <motion.span
+                    layoutId="ppvio-settings-chapter"
+                    transition={SPRING_PILL}
+                    className="absolute inset-0 rounded-full bg-gold"
+                  />
+                )}
+                <span className="relative z-10">{label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </header>
 
-            {/* Cinema System Overview Hero Card */}
-            <section className="luxury-card sheen-overlay mt-4 rounded-[26px] p-5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-gold/30 bg-gold/14 px-2.5 py-0.5 text-[11px] font-semibold tracking-wide text-gold-bright">
-                    <SparkleIcon size={12} weight="fill" />PPVIO 私人影院
-                  </span>
-                  <p className="mt-2.5 text-[28px] font-semibold leading-none tracking-[-0.03em] tabular-nums text-ink">
-                    {status?.scan?.active_videos != null ? `${status.scan.active_videos}` : "—"}
-                    <span className="ml-1.5 text-[14px] font-normal text-muted">部视频</span>
-                  </p>
-                </div>
-                <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-medium ${unreachable ? "bg-accent-soft text-accent" : "bg-ok/16 text-ok"}`}>
-                  <span className={`size-1.5 rounded-full ${unreachable ? "bg-accent" : "bg-ok shadow-[0_0_8px_rgba(48,209,88,0.8)]"}`} />
-                  {unreachable ? "目录异常" : "服务正常"}
+      {/* Active Chapter Stage */}
+      <div className="relative min-h-0 flex-1 overflow-y-auto pr-1 [scrollbar-width:none]">
+        <AnimatePresence mode="wait" initial={false}>
+          {page === "hub" && (
+            <motion.div
+              key="hub"
+              initial={{ opacity: 0, x: dir * 28 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: dir * -24 }}
+              transition={SPRING_STAGE}
+              className="space-y-5"
+            >
+              {/* Clean Editorial Status Grid — High typographic contrast, zero clutter */}
+              <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <MetricBlock label="片库规模" value={status?.scan?.active_videos != null ? String(status.scan.active_videos) : "—"} />
+                <MetricBlock label="已评影片" value={String(taste.rated_count)} accent={taste.active} />
+                <MetricBlock label="传输通道" value={mode?.mode === "direct" ? "115 直连" : "WebDAV"} />
+                <MetricBlock label="起播画质" value={prefs.lowRes ? "480P 优先" : "原画直出"} />
+              </section>
+
+              <SettingsSection title="常用开关">
+                <PrefToggle pref="coverBlur" title="封面防窥" hint="片库与标签默认启用折光模糊" />
+                <PrefToggle pref="lowRes" title="极速起播" hint="优先加载 480P 副本，切页更快" />
+              </SettingsSection>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => void api.logout().finally(onLoggedOut)}
+                  className="inline-flex h-10 items-center gap-2 rounded-full border border-accent/40 px-5 text-[14px] font-medium text-accent hover:bg-accent/12"
+                >
+                  <SignOutIcon size={16} />退出登录
+                </button>
+              </div>
+            </motion.div>
+          )}
+
+          {page === "storage" && (
+            <motion.div key="storage" initial={{ opacity: 0, x: dir * 28 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: dir * -24 }} transition={SPRING_STAGE}>
+              <StoragePage onBack={() => goTo("hub")} />
+            </motion.div>
+          )}
+
+          {page === "playback" && (
+            <motion.div key="playback" initial={{ opacity: 0, x: dir * 28 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: dir * -24 }} transition={SPRING_STAGE}>
+              <PlaybackPage mode={mode} onModeChange={setMode} onBack={() => goTo("hub")} />
+            </motion.div>
+          )}
+
+          {page === "privacy" && (
+            <motion.div key="privacy" initial={{ opacity: 0, x: dir * 28 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: dir * -24 }} transition={SPRING_STAGE}>
+              <PrivacyPage onBack={() => goTo("hub")} />
+            </motion.div>
+          )}
+
+          {page === "maintenance" && (
+            <motion.div key="maintenance" initial={{ opacity: 0, x: dir * 28 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: dir * -24 }} transition={SPRING_STAGE}>
+              <MaintenancePage
+                status={status}
+                watched={watched}
+                onWatchedChange={setWatched}
+                dupes={dupes}
+                onDuplicates={onDuplicates}
+                onBack={() => goTo("hub")}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* Bottom Order & Chaos Chapter Progress Rail */}
+      <footer className="mt-3 flex shrink-0 items-center justify-between gap-4 border-t border-line pt-3">
+        <div className="flex flex-1 items-center gap-2.5 max-w-md">
+          {CHAPTERS.map(([key, label], i) => {
+            const active = i === currentIdx;
+            return (
+              <button key={key} type="button" onClick={() => goTo(key)} className="flex flex-1 flex-col gap-1.5 text-left">
+                <span className={`text-[13px] ${active ? "font-semibold text-ink" : "text-faint"}`}>
+                  {String(i + 1).padStart(2, "0")}
                 </span>
-              </div>
-              <div className="mt-4 grid grid-cols-3 gap-2">
-                <div className="rounded-[14px] border border-white/[0.07] bg-black/35 px-3 py-2">
-                  <span className="block text-[11px] text-faint">传输通道</span>
-                  <span className="mt-0.5 block truncate text-[13px] font-semibold text-ink">
-                    {mode?.mode === "direct" ? "115 直连" : "WebDAV"}
-                  </span>
-                </div>
-                <div className="rounded-[14px] border border-white/[0.07] bg-black/35 px-3 py-2">
-                  <span className="block text-[11px] text-faint">起播画质</span>
-                  <span className="mt-0.5 block truncate text-[13px] font-semibold text-gold-bright">
-                    {prefs.lowRes ? "480p 优先" : "原画直出"}
-                  </span>
-                </div>
-                <div className="rounded-[14px] border border-white/[0.07] bg-black/35 px-3 py-2">
-                  <span className="block text-[11px] text-faint">隐私防窥</span>
-                  <span className="mt-0.5 block truncate text-[13px] font-semibold text-ink">
-                    {prefs.coverBlur && prefs.privacyLock ? "双重开启" : prefs.coverBlur || prefs.privacyLock ? "已开启" : "已关闭"}
-                  </span>
-                </div>
-              </div>
-            </section>
-
-            {/* Quick Controls */}
-            <SettingsSection title="常用快捷开关">
-              <PrefToggle pref="coverBlur" title="封面模糊" hint="片库与标签封面默认模糊防窥" />
-              <PrefToggle pref="lowRes" title="低清优先" hint="有 480p 副本时优先起播，滑动更顺" />
-            </SettingsSection>
-
-            {/* Dedicated Component Sub-pages */}
-            <SettingsSection title="组件与系统设置">
-              <SettingsNavRow
-                icon={<CloudIcon size={20} weight="fill" />}
-                iconTone="bg-sky-500/18 text-sky-300 border border-sky-400/20"
-                title="网盘与视频目录"
-                subtitle="WebDAV 地址、账号凭据与媒体文件夹"
-                value={folderCount ? `${folderCount} 个目录` : "未配置"}
-                onClick={() => openPage("storage")}
-              />
-              <SettingsNavRow
-                icon={<FilmSlateIcon size={20} weight="fill" />}
-                iconTone="bg-gold-soft text-gold-bright border border-gold/25"
-                title="播放与画质引擎"
-                subtitle="起播画质偏好、115 直连通道设置"
-                value={mode?.mode === "direct" ? "115 直连" : "WebDAV"}
-                onClick={() => openPage("playback")}
-              />
-              <SettingsNavRow
-                icon={<ShieldCheckIcon size={20} weight="fill" />}
-                iconTone="bg-ok/16 text-ok border border-ok/25"
-                title="隐私与安全防护"
-                subtitle="封面模糊、离开与切后台自动遮屏"
-                value={prefs.privacyLock ? "已防护" : "基础"}
-                onClick={() => openPage("privacy")}
-              />
-              <SettingsNavRow
-                icon={<HardDrivesIcon size={20} weight="fill" />}
-                iconTone="bg-purple-500/18 text-purple-300 border border-purple-400/20"
-                title="片库维护与状态"
-                subtitle="扫描健康度、看过重置周期、疑似重复"
-                value={dupes ? `${dupes} 组重复` : unreachable ? "需检查" : "健康"}
-                warn={unreachable}
-                onClick={() => openPage("maintenance")}
-              />
-            </SettingsSection>
-
-            <motion.button type="button" whileTap={{ scale: 0.97 }} transition={SPRING_TAP}
-              className="ios-card mt-7 flex h-12 w-full items-center justify-center gap-2 rounded-full text-[15px] font-medium text-accent hover:border-accent/35"
-              onClick={() => void api.logout().finally(onLoggedOut)}>
-              <SignOutIcon size={18} weight="bold" />退出登录
-            </motion.button>
-          </motion.div>
-        ) : (
-          <motion.div key={page}
-            initial={{ opacity: 0, x: 28 }}
-            animate={{ opacity: 1, x: 0, transition: SPRING_STAGE }}
-            exit={{ opacity: 0, x: 20, transition: { duration: 0.16, ease: "easeOut" } }}>
-            {page === "storage" && <StoragePage onBack={() => openPage("hub")} onSaved={setStorage} />}
-            {page === "playback" && <PlaybackPage mode={mode} onModeChange={setMode} onBack={() => openPage("hub")} />}
-            {page === "privacy" && <PrivacyPage onBack={() => openPage("hub")} />}
-            {page === "maintenance" && (
-              <MaintenancePage status={status} watched={watched} dupes={dupes}
-                onWatchedChange={setWatched} onDuplicates={onDuplicates} onBack={() => openPage("hub")} />
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
+                <span className={`block h-[2px] w-full ${active ? "bg-gold" : "bg-white/15"}`} />
+                <span className="sr-only">{label}</span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            aria-label="上一章"
+            disabled={currentIdx <= 0}
+            onClick={() => goTo(CHAPTERS[currentIdx - 1][0])}
+            className="grid size-10 place-items-center rounded-full border border-line bg-surface/70 text-ink hover:border-gold/50 disabled:opacity-25"
+          >
+            <CaretLeftIcon size={18} weight="bold" />
+          </button>
+          <button
+            type="button"
+            aria-label="下一章"
+            disabled={currentIdx >= CHAPTERS.length - 1}
+            onClick={() => goTo(CHAPTERS[currentIdx + 1][0])}
+            className="grid size-10 place-items-center rounded-full border border-line bg-surface/70 text-ink hover:border-gold/50 disabled:opacity-25"
+          >
+            <CaretRightIcon size={18} weight="bold" />
+          </button>
+        </div>
+      </footer>
     </main>
+  );
+}
+
+function MetricBlock({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <div className="rounded-[16px] border border-line bg-surface/75 px-4 py-4">
+      <div className="text-[13px] text-muted">{label}</div>
+      <div className={`mt-2 truncate text-[26px] font-semibold leading-none tracking-[-0.03em] tabular-nums ${accent ? "text-gold-bright" : "text-ink"}`}>
+        {value}
+      </div>
+    </div>
   );
 }

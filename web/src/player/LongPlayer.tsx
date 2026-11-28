@@ -9,8 +9,8 @@ import { api, chooseStream, type Media } from "../api";
 import { mediaTools } from "../mediaTools";
 import { GestureRecognizer } from "../feed/gestures";
 import { MediaActions } from "../feed/MediaActions";
-import { bufferedAhead } from "../feed/mediaBuffer";
 import { setPref, usePrefs } from "../prefs";
+import { setRating, StarRating } from "../ratings";
 import { announce, Cover, formatDuration } from "../ui/Grid";
 import { setLongPlayback, useLocked } from "../ui/privacy";
 import { toast } from "../ui/toast";
@@ -24,7 +24,7 @@ import { usePlaybackHistory } from "./usePlaybackHistory";
 import { QuickTagButton } from "../ui/QuickTags";
 import { haptic } from "../ui/haptics";
 import { useApertureReveal } from "../ui/gsap";
-import { FilmSlatePill, FlutedPrivacyShield } from "../ui/CinemaChrome";
+import { FlutedPrivacyShield } from "../ui/CinemaChrome";
 import { prewarmMedia } from "../ui/prewarm";
 import { EASE_HUD, SPRING_PILL, SPRING_STAGE, SPRING_TAP } from "../ui/motion";
 
@@ -32,7 +32,6 @@ const SPEEDS = [1, 1.25, 1.5, 2];
 const SAVE_EVERY_MS = 10_000;
 const NEXT_IN_SECONDS = 5;
 
-/** Where to resume: a saved position, unless it is at the very start or the very end. */
 export function resumeAt(saved: number | undefined, duration: number | null): number {
   if (!saved || saved < 10) return 0;
   if (duration && saved > duration - 30) return 0;
@@ -41,7 +40,6 @@ export function resumeAt(saved: number | undefined, duration: number | null): nu
 
 export type PlayerKey = "toggle" | "back" | "forward" | "fullscreen" | "mute" | "close";
 
-/** YouTube-style keys: space/k pause, ←/j and →/l jump 10 s, f full screen, m mute, Esc back. */
 export function playerKey(key: string): PlayerKey | null {
   switch (key.length === 1 ? key.toLowerCase() : key) {
     case " ": case "k": return "toggle";
@@ -56,9 +54,14 @@ export function playerKey(key: string): PlayerKey | null {
 
 type FullscreenVideo = HTMLVideoElement & { webkitEnterFullscreen?: () => void };
 
+/**
+ * Unobstructed Long Video Cinema Player:
+ * - Dedicated top header & bottom console live OUTSIDE the <video> frame so controls never cover playback
+ * - Direct 1-tap 5-star rating right in the bottom console (+ keys 1-5) feeds taste recommendations
+ * - Tap the video to enter pure Cinema Zen Mode (hides rails cleanly for 100% black edge-to-edge viewing)
+ */
 export function LongPlayer({ media, next, onClose, onNext, startAt, continueNext = false }: {
   media: Media; onClose: () => void;
-  /** The next long video of the wall this one was opened from; it starts by itself when this one ends. */
   next?: Media; onNext?: () => void; startAt?: number; continueNext?: boolean;
 }) {
   const prefs = usePrefs();
@@ -69,7 +72,6 @@ export function LongPlayer({ media, next, onClose, onNext, startAt, continueNext
   const [playing, setPlaying] = useState(false);
   const [controls, setControls] = useState(true);
   const [time, setTime] = useState(0);
-  const [buffered, setBuffered] = useState(0);
   const [duration, setDuration] = useState(media.duration_seconds ?? 0);
   const [speed, setSpeed] = useState(1);
   const [fast, setFast] = useState(false);
@@ -91,10 +93,8 @@ export function LongPlayer({ media, next, onClose, onNext, startAt, continueNext
   const resume = useRef(startAt ?? 0);
   const src = chooseStream(media, prefs.lowRes);
 
-  // Ceremonial GSAP aperture curtain reveal when launching or switching long videos.
   useApertureReveal(stage, [media.id]);
 
-  // Prewarm current tail (for instant deep seeking) and next video head (for zero-wait autoplay).
   useEffect(() => {
     if (locked) return;
     prewarmMedia(media, prefs.lowRes, { tail: true });
@@ -108,9 +108,8 @@ export function LongPlayer({ media, next, onClose, onNext, startAt, continueNext
     setPref("lowRes", low);
   };
   const hasLow = media.variants.some(v => v.height && v.height < (media.height ?? Infinity));
-  const title = media.groups?.[0]?.label;
+  const title = media.groups?.[0]?.label ?? "影院放映";
   const pip = document.pictureInPictureEnabled;
-  const resLabel = media.height ? `${media.height}P` : null;
 
   const horizontal = useHorizontalSeek(video, src, !locked && !screenLocked);
   const recovery = usePlaybackRecovery(video, src, !locked);
@@ -151,12 +150,6 @@ export function LongPlayer({ media, next, onClose, onNext, startAt, continueNext
     return () => { clearInterval(timer); document.removeEventListener("visibilitychange", hidden); save(); };
   }, [media.id]);
 
-  useEffect(() => {
-    if (!controls || !playing || menu) return;
-    const timer = setTimeout(() => setControls(false), 3200);
-    return () => clearTimeout(timer);
-  }, [controls, playing, menu]);
-
   const seekBy = (delta: number) => {
     const el = video.current;
     if (el) el.currentTime = Math.max(0, Math.min(el.duration || Infinity, el.currentTime + delta));
@@ -186,7 +179,7 @@ export function LongPlayer({ media, next, onClose, onNext, startAt, continueNext
         await root.current.requestFullscreen();
         await (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> }).lock?.("landscape");
       } else (video.current as FullscreenVideo | null)?.webkitEnterFullscreen?.();
-    } catch { /* not every browser allows it; the page still plays */ }
+    } catch { /* ignore */ }
   };
   const pictureInPicture = async () => {
     try {
@@ -214,7 +207,6 @@ export function LongPlayer({ media, next, onClose, onNext, startAt, continueNext
 
   const keys = useRef<(key: PlayerKey) => void>(() => undefined);
   keys.current = key => {
-    setControls(true);
     if (key === "toggle") toggle();
     else if (key === "back" || key === "forward") jumpBy(key === "forward");
     else if (key === "fullscreen") void fullscreen();
@@ -226,6 +218,13 @@ export function LongPlayer({ media, next, onClose, onNext, startAt, continueNext
       const target = event.target as HTMLElement | null;
       if (menu || event.metaKey || event.ctrlKey || event.altKey) return;
       if (target?.isContentEditable || (target instanceof HTMLInputElement && target.type !== "range")) return;
+      if (event.key >= "1" && event.key <= "5") {
+        event.preventDefault();
+        const n = Number(event.key);
+        haptic(n >= 4 ? 12 : 6);
+        setRating(media.id, n, { announceToast: true });
+        return;
+      }
       const key = playerKey(event.key);
       if (!key) return;
       event.preventDefault();
@@ -233,7 +232,7 @@ export function LongPlayer({ media, next, onClose, onNext, startAt, continueNext
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [menu]);
+  }, [menu, media.id]);
 
   useEffect(() => {
     if (countdown === null || !onNext) return;
@@ -272,17 +271,54 @@ export function LongPlayer({ media, next, onClose, onNext, startAt, continueNext
     }
   };
 
+  const showRails = controls && !fast && !screenLocked;
+
   return (
-    <div ref={root} className="fixed inset-0 z-30 bg-bg">
-      <div ref={stage} className="relative size-full overflow-hidden bg-black">
-        <video ref={video} src={src} poster={media.cover_url ?? undefined} playsInline autoPlay muted={prefs.muted}
+    <div ref={root} className="fixed inset-0 z-30 flex flex-col overflow-hidden bg-bg">
+      {/* Top Perimeter Bar — OUTSIDE the video */}
+      {showRails && (
+        <header className="flex shrink-0 items-center gap-2 border-b border-line bg-bg px-3.5 py-2 pt-[max(0.6rem,env(safe-area-inset-top))] text-ink sm:px-6">
+          <button type="button" onClick={onClose} aria-label="返回"
+            className="grid size-9.5 shrink-0 place-items-center rounded-full border border-line bg-surface/80 hover:border-gold/50">
+            <CaretLeftIcon size={19} weight="bold" />
+          </button>
+          <p className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-0.015em] text-ink">{title}</p>
+          <button type="button" onClick={() => { haptic(8); setFillMode(v => !v); }} aria-label="切换画面比例" title="适应/铺满"
+            className={`hidden size-9 shrink-0 place-items-center rounded-full border sm:grid ${fillMode ? "border-gold/55 bg-gold/15 text-gold-bright" : "border-line bg-surface/70"}`}>
+            <FrameCornersIcon size={17} />
+          </button>
+          <button type="button" onClick={() => { haptic(8); setRotated(v => !v); }} aria-label="旋转画面" title="旋转 90°"
+            className={`hidden size-9 shrink-0 place-items-center rounded-full border sm:grid ${rotated ? "border-gold/55 bg-gold/15 text-gold-bright" : "border-line bg-surface/70"}`}>
+            <DeviceRotateIcon size={17} />
+          </button>
+          <button type="button" onClick={() => { haptic(8); setScreenLocked(true); setUnlockHint(true); setControls(false); }} aria-label="锁定屏幕防误触"
+            className="grid size-9 shrink-0 place-items-center rounded-full border border-line bg-surface/70">
+            <LockSimpleIcon size={17} />
+          </button>
+          <QuickTagButton media={media} enabled={!locked} />
+          <BookmarkButton media={media} video={video} enabled={!locked} />
+          <button type="button" onClick={() => setMenu(true)} aria-label="更多"
+            className="grid size-9 shrink-0 place-items-center rounded-full border border-line bg-surface/70">
+            <DotsThreeIcon size={21} weight="bold" />
+          </button>
+        </header>
+      )}
+
+      {/* 100% UNOBSTRUCTED VIDEO STAGE */}
+      <div ref={stage} className="relative min-h-0 flex-1 overflow-hidden bg-black">
+        <video
+          ref={video}
+          src={src}
+          poster={media.cover_url ?? undefined}
+          playsInline
+          autoPlay
+          muted={prefs.muted}
           className={`size-full transition-transform duration-300 ${fillMode ? "object-cover" : "object-contain"} ${rotated ? "rotate-90 scale-[1.35]" : ""}`}
           onLoadedMetadata={event => {
             setDuration(event.currentTarget.duration);
             if (resume.current) { event.currentTarget.currentTime = resume.current; resume.current = 0; }
             event.currentTarget.playbackRate = speed;
           }}
-          onProgress={event => setBuffered(bufferedAhead(event.currentTarget))}
           onError={() => { setFailed(true); setLoading(false); }}
           onLoadStart={() => { setFailed(false); setLoading(true); }}
           onWaiting={event => { if (!event.currentTarget.paused) setLoading(true); }}
@@ -291,20 +327,21 @@ export function LongPlayer({ media, next, onClose, onNext, startAt, continueNext
           onCanPlay={() => setLoading(false)}
           onPlaying={() => { setFailed(false); setLoading(false); }}
           onPlay={event => { setPlaying(true); setCountdown(null); setLoading(event.currentTarget.readyState < 3); }}
-          onPause={() => { setPlaying(false); setControls(true); setLoading(false); }}
+          onPause={() => { setPlaying(false); setLoading(false); }}
           onEnded={() => { if ((next || continueNext) && onNext) setCountdown(NEXT_IN_SECONDS); }}
           onTimeUpdate={event => {
             const t = event.currentTarget.currentTime;
-            setBuffered(bufferedAhead(event.currentTarget));
             if (loopA !== null && loopB !== null && t >= loopB) { event.currentTarget.currentTime = loopA; setTime(loopA); return; }
             setTime(t);
-          }} />
+          }}
+        />
 
         {brightness < 1 && (
           <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-black" style={{ opacity: Math.max(0, Math.min(0.7, 1 - brightness)) }} />
         )}
 
-        <div className="absolute inset-0 touch-none select-none"
+        <div
+          className="absolute inset-0 touch-none select-none"
           onPointerDown={event => {
             horizontal.down(event.clientX, event.clientY);
             gestures.current?.down(event.clientX, event.clientY, performance.now());
@@ -338,9 +375,13 @@ export function LongPlayer({ media, next, onClose, onNext, startAt, continueNext
                 return;
               }
             }
-            if (horizontal.move(event.clientX, event.clientY)) { vDrag.current = null; event.currentTarget.setPointerCapture?.(event.pointerId); gestures.current?.cancel(); }
-            else gestures.current?.move(event.clientX, event.clientY);
-            if (event.pointerType === "mouse") setControls(true);
+            if (horizontal.move(event.clientX, event.clientY)) {
+              vDrag.current = null;
+              event.currentTarget.setPointerCapture?.(event.pointerId);
+              gestures.current?.cancel();
+            } else {
+              gestures.current?.move(event.clientX, event.clientY);
+            }
           }}
           onPointerUp={event => {
             if (vDrag.current?.active) { vDrag.current = null; setTimeout(() => setVHud(null), 700); return; }
@@ -349,146 +390,138 @@ export function LongPlayer({ media, next, onClose, onNext, startAt, continueNext
             else gestures.current?.up(event.clientX, performance.now());
           }}
           onPointerCancel={() => { vDrag.current = null; setVHud(null); horizontal.cancel(); gestures.current?.cancel(); }}
-          onContextMenu={event => event.preventDefault()} />
+          onContextMenu={event => event.preventDefault()}
+        />
 
         <AnimatePresence>
           {vHud && (
             <motion.div key="vhud" initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={EASE_HUD}
-              className="glass-dock film-slate pointer-events-none absolute left-1/2 top-1/3 z-20 flex -translate-x-1/2 items-center gap-2.5 rounded-full px-4 py-2 text-[12px] font-semibold text-gold-bright">
+              className="glass-dock pointer-events-none absolute left-1/2 top-1/3 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full px-4 py-2 text-[13px] font-semibold text-gold-bright">
               {vHud.kind === "brightness" ? <SunDimIcon size={17} weight="fill" /> : <SpeakerHighIcon size={17} weight="fill" />}
-              <span>{vHud.kind === "brightness" ? "LUM" : "VOL"} {vHud.value}%</span>
+              <span>{vHud.value}%</span>
             </motion.div>
+          )}
+          {jump && (
+            <motion.span key={jump} className={`glass-pill pointer-events-none absolute top-1/2 -mt-9 grid size-16 place-items-center rounded-full border-gold/35 text-gold-bright ${jump === "forward" ? "right-[16%]" : "left-[16%]"}`}
+              initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={SPRING_PILL}>
+              {jump === "forward" ? <ArrowClockwiseIcon size={26} weight="bold" /> : <ArrowCounterClockwiseIcon size={26} weight="bold" />}
+            </motion.span>
+          )}
+          {fast && (
+            <motion.span key="fast" className="glass-pill-gold pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-full px-4 py-1 text-[13px] font-semibold"
+              initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={SPRING_PILL}>2×</motion.span>
+          )}
+          {screenLocked && unlockHint && (
+            <motion.button key="unlock-screen" type="button" aria-label="解除防误触锁屏"
+              onClick={() => { haptic(8); setScreenLocked(false); setUnlockHint(false); setControls(true); }}
+              initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={SPRING_STAGE}
+              className="glass-pill-gold pressable absolute left-4 top-1/2 z-20 flex -translate-y-1/2 items-center gap-1.5 rounded-full px-4 py-2.5 text-[14px] font-semibold">
+              <LockSimpleOpenIcon size={17} weight="bold" />解锁
+            </motion.button>
           )}
         </AnimatePresence>
 
         <LoadingFeedback video={video} source={src} waiting={loading} enabled={!locked && !failed} />
         <RecoveryNotice {...recovery} compatible={hasLow && !prefs.lowRes ? () => changeQuality(true) : undefined} />
-        {horizontal.target !== null && <div className="pointer-events-none absolute inset-x-0 bottom-40"><SeekPreview id={media.id} time={horizontal.target} enabled={!locked} /></div>}
-
-        <AnimatePresence>
-          {jump && (
-            <motion.span key={jump} className={`glass-pill pointer-events-none absolute top-1/2 -mt-9 grid size-18 place-items-center rounded-full border-gold/35 text-gold-bright ${jump === "forward" ? "right-[16%]" : "left-[16%]"}`}
-              initial={{ opacity: 0, scale: 0.8, rotate: jump === "forward" ? -24 : 24 }}
-              animate={{ opacity: 1, scale: 1, rotate: 0 }}
-              exit={{ opacity: 0, scale: 1.08 }}
-              transition={SPRING_PILL}>
-              {jump === "forward" ? <ArrowClockwiseIcon size={28} weight="bold" /> : <ArrowCounterClockwiseIcon size={28} weight="bold" />}
-            </motion.span>
-          )}
-          {fast && (
-            <motion.span key="fast" className="glass-pill-gold film-slate pointer-events-none absolute left-1/2 top-[max(1.1rem,env(safe-area-inset-top))] -translate-x-1/2 rounded-full px-4 py-1.5 text-[12px] font-semibold"
-              initial={{ opacity: 0, y: -10, scale: 0.92 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -6 }}
-              transition={SPRING_PILL}>2.0× FAST</motion.span>
-          )}
-          {screenLocked && unlockHint && (
-            <motion.button key="unlock-screen" type="button" aria-label="解除防误触锁屏"
-              onClick={() => { haptic(8); setScreenLocked(false); setUnlockHint(false); setControls(true); }}
-              initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.92 }}
-              transition={SPRING_STAGE}
-              className="glass-pill-gold pressable absolute left-4 top-1/2 z-20 flex -translate-y-1/2 items-center gap-1.5 rounded-full px-4 py-2.5 text-[13px] font-semibold">
-              <LockSimpleOpenIcon size={17} weight="bold" />点按解锁
-            </motion.button>
-          )}
-          {controls && !fast && !screenLocked && (
-            <motion.div key="controls" className="pointer-events-none absolute inset-0 flex flex-col justify-between bg-gradient-to-b from-black/72 via-transparent to-black/86"
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={EASE_HUD}>
-              {/* Top Cinema Slate Header (single container entrance, children static) */}
-              <motion.div initial={{ y: -12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -10, opacity: 0 }} transition={EASE_HUD}
-                className="pointer-events-auto space-y-1.5 px-3.5 pt-[max(0.85rem,env(safe-area-inset-top))] text-ink">
-                <div className="flex items-center gap-1.5 sm:gap-2">
-                  <button type="button" onClick={onClose} aria-label="返回" className="glass-pill pressable grid size-10 shrink-0 place-items-center rounded-full"><CaretLeftIcon size={20} weight="bold" /></button>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[14px] font-semibold tracking-[-0.015em] text-ink sm:text-[15px]">{title}</p>
-                    <div className="mt-0.5 hidden sm:flex">
-                      <FilmSlatePill resolution={resLabel} codec={media.codec} bufferedSeconds={buffered} lowRes={prefs.lowRes && hasLow} className="h-5.5 px-2 py-0 text-[9.5px]" />
-                    </div>
-                  </div>
-                  <button type="button" onClick={() => { haptic(8); setFillMode(v => !v); }} aria-label="切换画面比例" title="适应/铺满"
-                    className={`glass-pill pressable grid size-9.5 shrink-0 place-items-center rounded-full sm:size-10 ${fillMode ? "border-gold/50 text-gold-bright" : ""}`}><FrameCornersIcon size={17} /></button>
-                  <button type="button" onClick={() => { haptic(8); setRotated(v => !v); }} aria-label="旋转画面" title="旋转 90°"
-                    className={`glass-pill pressable grid size-9.5 shrink-0 place-items-center rounded-full sm:size-10 ${rotated ? "border-gold/50 text-gold-bright" : ""}`}><DeviceRotateIcon size={17} /></button>
-                  <button type="button" onClick={() => { haptic(8); setScreenLocked(true); setUnlockHint(true); setControls(false); }} aria-label="锁定屏幕防误触"
-                    className="glass-pill pressable grid size-9.5 shrink-0 place-items-center rounded-full sm:size-10"><LockSimpleIcon size={17} /></button>
-                  <QuickTagButton media={media} enabled={!locked} />
-                  <BookmarkButton media={media} video={video} enabled={!locked} />
-                  <button type="button" onClick={() => setMenu(true)} aria-label="更多" className="glass-pill pressable grid size-9.5 shrink-0 place-items-center rounded-full sm:size-10"><DotsThreeIcon size={22} weight="bold" /></button>
-                </div>
-                <div className="flex items-center gap-2 pl-1 sm:hidden">
-                  <FilmSlatePill resolution={resLabel} codec={media.codec} bufferedSeconds={buffered} lowRes={prefs.lowRes && hasLow} className="h-6 px-2.5 py-0 text-[9.5px]" />
-                </div>
-              </motion.div>
-
-              {/* Bottom Optical Specular Console */}
-              <motion.div initial={{ y: 16, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 12, opacity: 0 }} transition={EASE_HUD}
-                className="pointer-events-auto mx-auto w-full max-w-3xl px-3.5 pb-[max(1rem,env(safe-area-inset-bottom))]">
-                <div className="mb-2 flex items-center justify-between gap-1.5 px-0.5">
-                  <div className="flex items-center gap-1.5">
-                    {([0.2, 0.4, 0.6, 0.8] as const).map(frac => (
-                      <button key={frac} type="button" onClick={() => jumpToFraction(frac)} aria-label={`空降 ${Math.round(frac * 100)}%`}
-                        className="glass-pill film-slate pressable shrink-0 rounded-full px-2.5 py-1 text-[10.5px] font-semibold text-ink/85 hover:border-gold/45 hover:text-gold-bright">
-                        {Math.round(frac * 100)}%
-                      </button>
-                    ))}
-                  </div>
-                  <button type="button" onClick={toggleAB} aria-label="A-B 循环"
-                    className={`pressable inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold ${loopA !== null ? "glass-pill-gold" : "glass-pill text-ink/88"}`}>
-                    <RepeatIcon size={13} weight="bold" />
-                    {loopA === null ? "A-B" : loopB === null ? "设 B" : "循环中"}
-                  </button>
-                </div>
-                <div className="glass-dock rounded-[22px] px-4 pb-3 pt-2">
-                  <SeekBar video={video} source={src} mediaId={media.id} duration={duration} enabled={!locked} markers={markers} />
-                  <div className="mt-1 flex items-center gap-1.5 text-ink">
-                    <motion.button type="button" onClick={toggle} aria-label={playing ? "暂停" : "播放"}
-                      whileTap={{ scale: 0.88 }} transition={SPRING_TAP}
-                      className="glass-pill-gold grid size-10 shrink-0 place-items-center rounded-full">
-                      {playing ? <PauseIcon size={19} weight="fill" /> : <PlayIcon size={19} weight="fill" className="translate-x-0.5" />}
-                    </motion.button>
-                    <button type="button" onClick={() => jumpBy(false)} aria-label="后退 10 秒" className="pressable hidden size-10 shrink-0 place-items-center rounded-full hover:bg-white/10 sm:grid"><ArrowCounterClockwiseIcon size={19} /></button>
-                    <button type="button" onClick={() => jumpBy(true)} aria-label="前进 10 秒" className="pressable hidden size-10 shrink-0 place-items-center rounded-full hover:bg-white/10 sm:grid"><ArrowClockwiseIcon size={19} /></button>
-                    <span className="film-slate ml-1 shrink-0 whitespace-nowrap text-[11.5px] font-medium text-ink/90">{formatDuration(time) || "0:00"} <span className="text-ink/40">/</span> {formatDuration(duration)}</span>
-                    <span className="flex-1" />
-                    <button type="button" onClick={toggleMute} aria-label={prefs.muted ? "打开声音" : "静音"} className="pressable grid size-9 shrink-0 place-items-center rounded-full hover:bg-white/10">
-                      {prefs.muted ? <SpeakerSlashIcon size={19} /> : <SpeakerHighIcon size={19} className="text-gold-bright" />}
-                    </button>
-                    <button type="button" className="glass-pill film-slate pressable shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold text-gold-bright"
-                      onClick={() => { const nextSpeed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; setSpeed(nextSpeed); if (video.current) video.current.playbackRate = nextSpeed; }}>
-                      {speed}×
-                    </button>
-                    {hasLow && (
-                      <button type="button" className="glass-pill film-slate pressable shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold"
-                        onClick={() => changeQuality(!prefs.lowRes)}>
-                        {prefs.lowRes ? "480P" : "原画"}
-                      </button>
-                    )}
-                    {pip && <button type="button" onClick={() => void pictureInPicture()} aria-label="画中画" className="pressable hidden size-9 shrink-0 place-items-center rounded-full hover:bg-white/10 sm:grid"><PictureInPictureIcon size={19} /></button>}
-                    <button type="button" onClick={() => void fullscreen()} aria-label="全屏" className="pressable grid size-9 shrink-0 place-items-center rounded-full hover:bg-white/10"><CornersOutIcon size={19} /></button>
-                  </div>
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {horizontal.target !== null && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-6"><SeekPreview id={media.id} time={horizontal.target} enabled={!locked} /></div>
+        )}
 
         {countdown !== null && (next || continueNext) && (
-          <motion.div initial={{ opacity: 0, y: 16, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={SPRING_STAGE}
-            className="glass-dock absolute bottom-[calc(7.4rem+env(safe-area-inset-bottom))] right-4 z-10 flex w-76 max-w-[calc(100%-2rem)] gap-3 rounded-[20px] p-3 text-ink" role="status">
-            <div className="relative aspect-video w-24 shrink-0 overflow-hidden rounded-[12px] bg-surface ring-1 ring-line">
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={SPRING_STAGE}
+            className="glass-dock absolute bottom-4 right-4 z-10 flex w-72 max-w-[calc(100%-2rem)] gap-3 rounded-[18px] p-3 text-ink" role="status">
+            <div className="relative aspect-video w-24 shrink-0 overflow-hidden rounded-[10px] bg-surface">
               {next?.cover_url && <Cover src={next.cover_url} className={`size-full object-cover ${prefs.coverBlur ? "blur-xl scale-110" : ""}`} />}
               <FlutedPrivacyShield active={prefs.coverBlur} />
             </div>
             <div className="flex min-w-0 flex-1 flex-col justify-between">
-              <p className="film-slate text-[12px] font-semibold text-gold-bright">UP NEXT · {countdown}S</p>
+              <p className="text-[13px] font-semibold text-gold-bright">下一部 · {countdown}s</p>
               <div className="flex gap-2">
-                <button type="button" onClick={() => onNext?.()} className="glass-pill-gold pressable whitespace-nowrap rounded-full px-3 py-1 text-[12px] font-semibold">立即播放</button>
-                <button type="button" onClick={() => setCountdown(null)} className="pressable whitespace-nowrap rounded-full bg-white/12 px-3 py-1 text-[12px] font-medium">取消</button>
+                <button type="button" onClick={() => onNext?.()} className="glass-pill-gold pressable rounded-full px-3 py-1 text-[13px] font-semibold">立即播放</button>
+                <button type="button" onClick={() => setCountdown(null)} className="pressable rounded-full bg-white/12 px-3 py-1 text-[13px]">取消</button>
               </div>
             </div>
           </motion.div>
         )}
-
-        <MediaActions media={media} open={menu} onClose={() => setMenu(false)} onRemove={media.deletable ? () => void remove() : undefined} video={video} />
       </div>
+
+      {/* Bottom Perimeter Console — OUTSIDE the video frame */}
+      {showRails && (
+        <footer className="shrink-0 border-t border-line bg-bg px-3.5 pb-[max(0.85rem,env(safe-area-inset-bottom))] pt-2 text-ink sm:px-8">
+          <div className="mx-auto flex w-full max-w-5xl flex-col gap-2">
+            <SeekBar video={video} source={src} mediaId={media.id} duration={duration} enabled={!locked} markers={markers} />
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <motion.button type="button" onClick={toggle} aria-label={playing ? "暂停" : "播放"}
+                  whileTap={{ scale: 0.88 }} transition={SPRING_TAP}
+                  className="glass-pill-gold grid size-10 shrink-0 place-items-center rounded-full">
+                  {playing ? <PauseIcon size={18} weight="fill" /> : <PlayIcon size={18} weight="fill" className="translate-x-0.5" />}
+                </motion.button>
+                <button type="button" onClick={() => jumpBy(false)} aria-label="后退 10 秒"
+                  className="pressable hidden size-9 place-items-center rounded-full hover:bg-white/10 sm:grid">
+                  <ArrowCounterClockwiseIcon size={18} />
+                </button>
+                <button type="button" onClick={() => jumpBy(true)} aria-label="前进 10 秒"
+                  className="pressable hidden size-9 place-items-center rounded-full hover:bg-white/10 sm:grid">
+                  <ArrowClockwiseIcon size={18} />
+                </button>
+                <span className="tabular-nums text-[13px] font-medium text-ink/90">
+                  {formatDuration(time) || "0:00"} <span className="text-ink/40">/</span> {formatDuration(duration)}
+                </span>
+              </div>
+
+              {/* Direct 1-Tap 5-Star Rating right on the outside cinema console */}
+              <StarRating mediaId={media.id} compact />
+
+              <div className="flex items-center gap-1.5">
+                <div className="hidden items-center gap-1 md:flex">
+                  {([0.2, 0.4, 0.6, 0.8] as const).map(frac => (
+                    <button key={frac} type="button" onClick={() => jumpToFraction(frac)} aria-label={`空降 ${Math.round(frac * 100)}%`}
+                      className="h-8 rounded-full border border-line px-2.5 text-[12px] font-medium text-ink/80 hover:border-gold/50 hover:text-gold-bright">
+                      {Math.round(frac * 100)}%
+                    </button>
+                  ))}
+                </div>
+                <button type="button" onClick={toggleAB} aria-label="A-B 循环"
+                  className={`inline-flex h-8.5 items-center gap-1 rounded-full border px-2.5 text-[13px] font-medium ${loopA !== null ? "border-gold/60 bg-gold/18 text-gold-bright" : "border-line text-ink/85"}`}>
+                  <RepeatIcon size={14} weight="bold" />
+                  {loopA === null ? "A-B" : loopB === null ? "设B" : "循环"}
+                </button>
+                <button type="button" onClick={toggleMute} aria-label={prefs.muted ? "打开声音" : "静音"}
+                  className="grid size-9 place-items-center rounded-full hover:bg-white/10">
+                  {prefs.muted ? <SpeakerSlashIcon size={19} /> : <SpeakerHighIcon size={19} className="text-gold-bright" />}
+                </button>
+                <button type="button" className="h-8.5 rounded-full border border-line px-2.5 text-[13px] font-semibold text-gold-bright"
+                  onClick={() => {
+                    const nextSpeed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length];
+                    setSpeed(nextSpeed);
+                    if (video.current) video.current.playbackRate = nextSpeed;
+                  }}>
+                  {speed}×
+                </button>
+                {hasLow && (
+                  <button type="button" className="h-8.5 rounded-full border border-line px-2.5 text-[13px] font-medium"
+                    onClick={() => changeQuality(!prefs.lowRes)}>
+                    {prefs.lowRes ? "480P" : "原画"}
+                  </button>
+                )}
+                {pip && (
+                  <button type="button" onClick={() => void pictureInPicture()} aria-label="画中画"
+                    className="hidden size-9 place-items-center rounded-full hover:bg-white/10 sm:grid">
+                    <PictureInPictureIcon size={18} />
+                  </button>
+                )}
+                <button type="button" onClick={() => void fullscreen()} aria-label="全屏"
+                  className="grid size-9 place-items-center rounded-full hover:bg-white/10">
+                  <CornersOutIcon size={18} />
+                </button>
+              </div>
+            </div>
+          </div>
+        </footer>
+      )}
+
+      <MediaActions media={media} open={menu} onClose={() => setMenu(false)} onRemove={media.deletable ? () => void remove() : undefined} video={video} />
     </div>
   );
 }

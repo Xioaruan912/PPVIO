@@ -104,4 +104,56 @@ export function useGridBatchReveal(container: RefObject<HTMLElement | null>, cou
   }, [container, count]);
 }
 
+/**
+ * Codrops-inspired horizontal folio page transition (clip-path unmask + gentle depth slide).
+ * Respects prefers-reduced-motion via gsap.matchMedia().
+ */
+export function useFolioTransition(
+  ref: RefObject<HTMLElement | null>,
+  key: string | number,
+  direction: 1 | -1 = 1,
+): void {
+  ensureGsap();
+  useGSAP(
+    () => {
+      const el = ref.current;
+      if (!el || typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+      const mm = gsap.matchMedia();
+      mm.add(
+        {
+          motion: "(prefers-reduced-motion: no-preference)",
+          reduce: "(prefers-reduced-motion: reduce)",
+        },
+        ctx => {
+          if (ctx.conditions?.reduce) {
+            gsap.fromTo(el, { opacity: 0.25 }, { opacity: 1, duration: 0.14, ease: "power1.out", clearProps: "opacity" });
+            return;
+          }
+          const fromClip = direction > 0 ? "inset(0% 0% 0% 10% round 14px)" : "inset(0% 10% 0% 0% round 14px)";
+          gsap.fromTo(
+            el,
+            {
+              x: direction * 44,
+              scale: 0.985,
+              opacity: 0.35,
+              clipPath: fromClip,
+            },
+            {
+              x: 0,
+              scale: 1,
+              opacity: 1,
+              clipPath: "inset(0% 0% 0% 0% round 0px)",
+              duration: 0.42,
+              ease: "power3.out",
+              clearProps: "transform,opacity,clipPath",
+            },
+          );
+        },
+      );
+      return () => mm.revert();
+    },
+    { scope: ref, dependencies: [key, direction], revertOnUpdate: true },
+  );
+}
+
 export { gsap, ScrollTrigger, useGSAP };

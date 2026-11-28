@@ -14,6 +14,10 @@ export interface Variant {
 
 export interface Media {
   premium?: boolean;
+  /** Persistent 1-5 star user rating (null/undefined if unrated). */
+  rating?: number | null;
+  /** Optional taste match score from the recommendation engine. */
+  taste_score?: number;
   /** View-only bookmark interval; never substitutes the server's opaque media ID. */
   clip?: { key: string; start: number; end?: number | null };
   organized?: boolean;
@@ -74,11 +78,25 @@ export interface CacheStats {
   max_bytes?: number;
 }
 
+export interface TasteProfile {
+  active: boolean;
+  rated_count: number;
+  five_star_count: number;
+  disliked_count?: number;
+  top_tags: { id: number; name: string; score: number }[];
+}
+
 export const api = {
   media: (id: string, signal?: AbortSignal) => request<Media>(`/api/v1/media/${id}`, { signal }),
   login: (secret: string) => request<{ authenticated: boolean }>("/api/v1/auth/login", json("POST", { secret })),
   logout: () => request<{ authenticated: boolean }>("/api/v1/auth/logout", json("POST")),
   feed: (limit = 6, signal?: AbortSignal) => request<{ items: Media[] }>(`/api/v1/feed?limit=${limit}`, { signal }),
+  refreshFeed: () => request<{ refreshed: boolean }>("/api/v1/feed/refresh", json("POST")),
+  ratings: (signal?: AbortSignal) => request<{ ratings: Record<string, number>; profile: TasteProfile }>("/api/v1/ratings", { signal }),
+  setRating: (id: string, stars: number) => request<{ id: string; stars: number }>(`/api/v1/media/${id}/rating`, json("PUT", { stars })),
+  syncRatings: (ratings: Record<string, number>) => request<{ synced: number }>("/api/v1/ratings/sync", json("POST", { ratings })),
+  recommendations: (category: Category, offset: number, limit = 20) =>
+    request<Page & { profile: TasteProfile }>(`/api/v1/recommendations?${q({ category, offset, limit })}`),
   favorite: (id: string, on: boolean) => request<{ favorite: boolean }>(`/api/v1/media/${id}/favorite`, { method: on ? "PUT" : "DELETE" }),
   videos: (category: Category, offset: number, limit = 20, tag: number | null = null, filters: VideoFilters = {}) =>
     request<Page>(`/api/v1/videos?${q({ category, offset, limit, sort: filters.sort ?? "newest", tag,

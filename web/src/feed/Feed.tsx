@@ -1,8 +1,8 @@
-import { ArrowDownIcon, ArrowsClockwiseIcon, CaretLeftIcon, SparkleIcon, TimerIcon, TrashIcon } from "@phosphor-icons/react";
-import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ArrowRightIcon, CaretLeftIcon, TrashIcon } from "@phosphor-icons/react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { api, chooseStream, Unauthorized, type Media } from "../api";
-import { setPref, usePrefs } from "../prefs";
+import { usePrefs } from "../prefs";
+import { hydrateMediaRatings } from "../ratings";
 import { useLocked } from "../ui/privacy";
 import { announce, subscribeMediaChanges } from "../ui/Grid";
 import { toast } from "../ui/toast";
@@ -11,10 +11,7 @@ import type { BufferReadiness } from "./useFeedPlayback";
 import { curationApi } from "../curationApi";
 import { FeedPreferencesButton } from "../ui/FeedPreferences";
 import { QuickTagPanel } from "../ui/QuickTags";
-import { SPRING_SHEET } from "../ui/motion";
-import { haptic } from "../ui/haptics";
 import { ensureGsap, gsap } from "../ui/gsap";
-import { OdometerIndex, SlotButton } from "../ui/CinemaChrome";
 import { prewarmMedia } from "../ui/prewarm";
 
 /** Append new clips, never one already in the list. */
@@ -24,34 +21,52 @@ export function mergeFeed(current: Media[], incoming: Media[]): Media[] {
 }
 
 /**
- * Clips one per screen, swiped vertically with GSAP scroll-scrubbed depth and 1:1 triage gestures.
+ * Direction A — Darkroom Horizontal Folio Player:
+ * - Strict left/right horizontal paging (zero vertical scrolling!)
+ * - 100% unobstructed video aperture; all controls live cleanly outside the video frame
+ * - Direct 1-tap 5-star rating & taste-ranked lookahead prewarming
  */
-export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, onRefresh, organize = false, enabled = true, startAt }: {
+export function ClipList({
+  items, setItems, start = 0, onNearEnd, onClose, onRefresh,
+  organize = false, onToggleOrganize, preferencesTrigger,
+  enabled = true, startAt,
+}: {
   items: Media[];
   setItems: (update: (list: Media[]) => Media[]) => void;
   start?: number;
   onNearEnd?: () => void;
   onClose?: () => void;
   onRefresh?: () => void;
-  /** 整理模式: swipe-to-triage gestures + 1-tap macro combos + inline tag creation. */
   organize?: boolean;
-  enabled?: boolean; startAt?: number;
+  onToggleOrganize?: () => void;
+  preferencesTrigger?: ReactNode;
+  enabled?: boolean;
+  startAt?: number;
 }) {
   ensureGsap();
   const [active, setActive] = useState(start);
-  const [pullY, setPullY] = useState(0);
-  const pullStart = useRef<number | null>(null);
   const container = useRef<HTMLDivElement>(null);
   const prefs = usePrefs();
   const locked = useLocked();
-  useEffect(() => subscribeMediaChanges(change => setItems(list => "removed" in change
-    ? list.filter(item => item.id !== change.id) : list.map(item => item.id === change.id ? { ...item, ...change } : item))), [setItems]);
+
+  useEffect(() => {
+    hydrateMediaRatings(items);
+  }, [items]);
+
+  useEffect(
+    () => subscribeMediaChanges(change => setItems(list => "removed" in change
+      ? list.filter(item => item.id !== change.id)
+      : list.map(item => item.id === change.id ? { ...item, ...change } : item))),
+    [setItems],
+  );
+
   const [preloadFor, setPreloadFor] = useState<{ id: string; src: string } | null>(null);
   const current = items[active];
   const currentKey = current?.clip?.key ?? current?.id;
   const currentSrc = current ? chooseStream(current, prefs.lowRes) : "";
   const currentSource = useRef({ id: currentKey, src: currentSrc, enabled });
   currentSource.current = { id: currentKey, src: currentSrc, enabled };
+
   const onBufferReadiness = useCallback<BufferReadiness>((id, src, ready) => {
     if (id !== currentSource.current.id || src !== currentSource.current.src) return;
     setPreloadFor(previous => ready
@@ -60,22 +75,22 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, onRef
   }, []);
   const preloadNext = preloadFor?.id === currentKey && preloadFor?.src === currentSrc;
 
-  // Aggressive lookahead prewarming: warm VPS disk cache & opening head for active+1 and active+2 immediately.
+  // Aggressive lookahead prewarming for active+1 and active+2
   useEffect(() => {
     if (!enabled || locked) return;
     prewarmMedia(items[active + 1], prefs.lowRes, { rangeHead: true });
     prewarmMedia(items[active + 2], prefs.lowRes, { rangeHead: false });
   }, [active, items, enabled, locked, prefs.lowRes]);
 
-  // Open on the clip that was tapped.
+  // Open on the tapped clip horizontally
   useLayoutEffect(() => {
     const el = container.current;
-    if (el && enabled) el.scrollTop = active * el.clientHeight;
+    if (el && enabled) el.scrollLeft = active * el.clientWidth;
   }, [start, enabled]);
 
   useEffect(() => { if (onNearEnd && active >= items.length - 3) onNearEnd(); }, [active, items.length, onNearEnd]);
 
-  // GSAP scroll-scrubbed depth choreography: receding outgoing plate, unmasking incoming plate.
+  // GSAP horizontal scroll-scrubbed depth choreography (receding outgoing plate, unmasking incoming plate)
   useEffect(() => {
     const scroller = container.current;
     if (!scroller || !enabled || typeof window === "undefined" || typeof window.matchMedia !== "function") return;
@@ -83,21 +98,21 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, onRef
     let frame = 0;
     const updateDepth = () => {
       frame = 0;
-      const vh = scroller.clientHeight || window.innerHeight || 1;
-      const top = scroller.scrollTop;
+      const vw = scroller.clientWidth || window.innerWidth || 1;
+      const left = scroller.scrollLeft;
       const mobile = window.innerWidth < 768;
       scroller.querySelectorAll<HTMLElement>("[data-index]").forEach(row => {
         const stage = row.querySelector<HTMLElement>("[data-feed-stage]");
         if (!stage) return;
         const idx = Number(row.dataset.index);
-        const dist = Math.min(1, Math.abs(top - idx * vh) / vh);
+        const dist = Math.min(1, Math.abs(left - idx * vw) / vw);
         if (dist < 0.005) {
           gsap.set(stage, { scale: 1, opacity: 1 });
         } else {
-          const minScale = mobile ? 0.94 : 0.91;
+          const minScale = mobile ? 0.94 : 0.92;
           gsap.set(stage, {
             scale: 1 - dist * (1 - minScale),
-            opacity: 1 - dist * 0.58,
+            opacity: 1 - dist * 0.55,
           });
         }
       });
@@ -111,7 +126,7 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, onRef
     };
   }, [enabled, items.length]);
 
-  // The clip that fills most of the screen is the active one.
+  // Observe which horizontal slide fills the viewport
   useEffect(() => {
     const root = container.current;
     if (!root) return;
@@ -146,9 +161,17 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, onRef
     }, 6000);
   }, [items, setItems]);
 
-  const next = useCallback(() => container.current?.scrollBy({ top: container.current.clientHeight, behavior: "smooth" }), []);
+  const goBy = useCallback((delta: 1 | -1) => {
+    const el = container.current;
+    if (!el) return;
+    const stepWidth = el.clientWidth || window.innerWidth || 1;
+    el.scrollBy({ left: delta * stepWidth, behavior: "smooth" });
+  }, []);
 
-  // Hands-free auto-swap timer: advances to the next clip automatically when enabled.
+  const prev = useCallback(() => goBy(-1), [goBy]);
+  const next = useCallback(() => goBy(1), [goBy]);
+
+  // Hands-free auto-swap timer
   useEffect(() => {
     if (!enabled || organize || locked || !prefs.autoSwapSeconds || active >= items.length - 1) return;
     const timer = setInterval(() => {
@@ -181,154 +204,136 @@ export function ClipList({ items, setItems, start = 0, onNearEnd, onClose, onRef
     finally { setCurating(false); }
   }, [current, curating, next, setItems]);
 
-  // Keyboard navigation + fast desktop triage shortcuts (D/Enter = keep+next, S/ArrowRight = skip).
+  // Horizontal Folio keyboard controls (← / → flip horizontally; D/Enter complete organize; S skip)
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const el = container.current;
-      if (!enabled || !el || event.metaKey || event.ctrlKey || event.altKey || event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
-      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      if (
+        !enabled || !el || event.metaKey || event.ctrlKey || event.altKey
+        || event.target instanceof HTMLInputElement
+        || event.target instanceof HTMLTextAreaElement
+      ) return;
+      if (event.key === "ArrowRight") {
         event.preventDefault();
-        el.scrollBy({ top: (event.key === "ArrowDown" ? 1 : -1) * el.clientHeight, behavior: "smooth" });
+        goBy(1);
+      } else if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        goBy(-1);
       } else if (organize && (event.key === "d" || event.key === "D" || event.key === "Enter")) {
         event.preventDefault();
         void complete();
-      } else if (organize && (event.key === "s" || event.key === "S" || event.key === "ArrowRight")) {
+      } else if (organize && (event.key === "s" || event.key === "S")) {
         event.preventDefault();
         next();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [enabled, organize, complete, next]);
+  }, [enabled, organize, complete, next, goBy]);
+
+  const organizePanel = organize && current ? (
+    <QuickTagPanel
+      key={current.id}
+      media={current}
+      compact
+      onDone={() => void complete()}
+      onApplyMacro={(tagIds, label) => void complete(tagIds, label)}
+      doneLabel={curating ? "保存整理中…" : "完成下一条"}
+      finishing={curating}
+      footerLeft={
+        <>
+          <button
+            type="button"
+            aria-label="删除"
+            disabled={!current.deletable}
+            onClick={() => void remove(current)}
+            className="pressable flex min-h-10 shrink-0 items-center justify-center gap-1 rounded-full border border-accent/40 bg-accent/12 px-3.5 text-[13px] font-semibold text-accent disabled:opacity-35"
+          >
+            <TrashIcon size={15} weight="bold" />删除
+          </button>
+          <button
+            type="button"
+            aria-label="跳过"
+            onClick={next}
+            className="pressable flex min-h-10 shrink-0 items-center justify-center gap-1 rounded-full border border-line bg-surface px-3.5 text-[13px] font-medium text-ink"
+          >
+            <ArrowRightIcon size={15} weight="bold" />跳过
+          </button>
+        </>
+      }
+    />
+  ) : null;
 
   return (
-    <div ref={container} className="ppvio-feed-scroller h-dvh snap-y snap-mandatory overflow-y-scroll [scrollbar-width:none]"
-      onTouchStart={e => { if (onRefresh && (container.current?.scrollTop ?? 0) <= 2) pullStart.current = e.touches[0]?.clientY ?? null; }}
-      onTouchMove={e => {
-        if (!onRefresh || pullStart.current === null || (container.current?.scrollTop ?? 0) > 2) return;
-        const delta = (e.touches[0]?.clientY ?? 0) - pullStart.current;
-        if (delta > 0) setPullY(Math.min(80, delta * 0.45));
-      }}
-      onTouchEnd={() => {
-        if (onRefresh && pullY >= 52) { haptic(10); onRefresh(); }
-        pullStart.current = null; setPullY(0);
-      }}>
-      {pullY > 12 && (
-        <div aria-hidden="true" className="pointer-events-none fixed inset-x-0 top-[max(3.75rem,env(safe-area-inset-top))] z-20 flex justify-center">
-          <span className="glass-pill inline-flex h-8 items-center gap-1.5 rounded-full px-3.5 text-[12px] font-medium text-gold-bright">
-            <ArrowsClockwiseIcon size={14} className={pullY >= 52 ? "animate-spin" : ""} />
-            {pullY >= 52 ? "松开换一批" : "下拉换一批"}
-          </span>
-        </div>
-      )}
-
-      {/* Center Film-Slate Mechanical Odometer */}
-      {items.length > 0 && (
-        <div className="pointer-events-none fixed inset-x-0 top-[max(0.92rem,env(safe-area-inset-top))] z-20 hidden justify-center sm:flex">
-          <div className="glass-pill inline-flex h-8.5 items-center gap-2 rounded-full px-3.5">
-            <OdometerIndex current={active + 1} total={items.length} />
-            {organize && <span className="text-[11px] font-medium text-ink/70">· 右滑留存 / 左滑跳过</span>}
-          </div>
-        </div>
-      )}
-
-      <AnimatePresence>
-        {organize && current && (
-          <motion.div key="organize-dock"
-            initial={{ opacity: 0, y: 24, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.96 }}
-            transition={SPRING_SHEET}
-            className="fixed inset-x-0 bottom-[calc(5.6rem+env(safe-area-inset-bottom))] z-20 mx-auto max-w-md px-3">
-            <div className="glass-dock overflow-hidden rounded-[22px] text-ink">
-              <div className="flex items-center justify-between border-b border-line px-3.5 py-2 text-[11px] text-muted">
-                <span className="inline-flex items-center gap-1.5 font-medium text-gold-bright">
-                  <SparkleIcon size={13} weight="fill" />极速分拣台
-                </span>
-                <span>画面右滑留存 · 左滑跳过</span>
-              </div>
-              <QuickTagPanel
-                key={current.id}
-                media={current}
-                compact
-                onDone={() => void complete()}
-                onApplyMacro={(tagIds, label) => void complete(tagIds, label)}
-                doneLabel={curating ? "保存整理中…" : "完成下一条"}
-                finishing={curating}
-                headerMeta={
-                  <span className="inline-flex shrink-0 items-center rounded-full border border-gold/30 bg-gold/12 px-2.5 py-1">
-                    <OdometerIndex current={active + 1} total={items.length} />
-                  </span>
-                }
-                footerLeft={
-                  <>
-                    <button type="button" aria-label="删除" disabled={!current.deletable} onClick={() => void remove(current)}
-                      className="pressable flex min-h-11 shrink-0 items-center justify-center gap-1 rounded-full border border-accent/35 bg-accent/14 px-3.5 text-[13px] font-semibold text-accent disabled:opacity-35">
-                      <TrashIcon size={16} weight="bold" />删除
-                    </button>
-                    <button type="button" aria-label="跳过" onClick={next}
-                      className="glass-pill pressable flex min-h-11 shrink-0 items-center justify-center gap-1 rounded-full px-3.5 text-[13px] font-medium text-ink">
-                      <ArrowDownIcon size={16} weight="bold" />跳过
-                    </button>
-                  </>
-                }
-              />
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+    <div
+      ref={container}
+      className="ppvio-feed-scroller flex size-full snap-x snap-mandatory overflow-x-scroll overflow-y-hidden [scrollbar-width:none]"
+    >
       {onClose && (
-        <button type="button" onClick={onClose} aria-label="返回"
-          className="glass-pill pressable fixed left-3 top-[max(0.75rem,env(safe-area-inset-top))] z-20 grid size-10 place-items-center rounded-full text-ink">
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="返回"
+          className="fixed left-4 top-[max(0.8rem,env(safe-area-inset-top))] z-30 grid size-10 place-items-center rounded-full border border-line bg-surface/90 text-ink hover:border-gold/50"
+        >
           <CaretLeftIcon size={20} weight="bold" />
         </button>
       )}
       {items.map((item, index) => (
-        <div key={item.clip?.key ?? item.id} data-index={index}>
-          <FeedItem media={item} active={enabled && index === active} mounted={enabled && Math.abs(index - active) <= 1}
-            eager={index === active + 1 && preloadNext} onBufferReadiness={onBufferReadiness}
-            onFavorite={setFavorite} onRemove={item.deletable && !item.clip ? remove : undefined}
+        <div key={item.clip?.key ?? item.id} data-index={index} className="h-full w-full shrink-0 snap-start snap-always">
+          <FeedItem
+            media={item}
+            active={enabled && index === active}
+            mounted={enabled && Math.abs(index - active) <= 1}
+            eager={index === active + 1 && preloadNext}
+            onBufferReadiness={onBufferReadiness}
+            onFavorite={setFavorite}
+            onRemove={item.deletable && !item.clip ? remove : undefined}
             raised={organize}
-            onTriageKeep={() => void complete()}
-            onTriageSkip={next}
-            startAt={index === start ? startAt : undefined} />
+            organizePanel={index === active ? organizePanel : undefined}
+            index={index}
+            total={items.length}
+            onPrev={prev}
+            onNext={next}
+            onRefresh={onRefresh}
+            onToggleOrganize={onToggleOrganize}
+            preferencesTrigger={preferencesTrigger}
+            startAt={index === start ? startAt : undefined}
+          />
         </div>
       ))}
     </div>
   );
 }
 
-/** The home feed: the server's shuffled deck, unwatched first. */
-const SWAP_STEPS = [0, 15, 30, 60] as const;
-
+/** The home feed: taste-ranked horizontal folio deck. */
 export function Feed({ onUnauthorized, enabled = true }: { onUnauthorized: () => void; enabled?: boolean }) {
   const [revision, setRevision] = useState(0);
-  const prefs = usePrefs();
-  const shuffle = useCallback(() => { setRevision(value => value + 1); toast("已换一批短视频"); }, []);
-  const cycleSwap = () => {
-    const idx = SWAP_STEPS.indexOf(prefs.autoSwapSeconds as typeof SWAP_STEPS[number]);
-    const nextSec = SWAP_STEPS[(idx + 1) % SWAP_STEPS.length];
-    haptic(8);
-    setPref("autoSwapSeconds", nextSec);
-    toast(nextSec ? `免手轮换：每 ${nextSec} 秒自动下一条` : "已关闭免手自动轮换");
-  };
-  return <>
-    <FeedPreferencesButton className="fixed left-3 top-[max(0.75rem,env(safe-area-inset-top))] z-20" onSaved={() => setRevision(value => value + 1)} />
-    <SlotButton
-      ariaLabel="免手自动轮换"
-      ariaPressed={prefs.autoSwapSeconds > 0}
-      active={prefs.autoSwapSeconds > 0}
-      onClick={cycleSwap}
-      icon={<TimerIcon size={15} weight={prefs.autoSwapSeconds > 0 ? "fill" : "bold"} />}
-      label={prefs.autoSwapSeconds > 0 ? `${prefs.autoSwapSeconds}s` : "自动"}
-      hoverLabel={prefs.autoSwapSeconds > 0 ? "切换" : "定时"}
-      className="fixed left-[5.6rem] top-[max(0.75rem,env(safe-area-inset-top))] z-20 h-10 px-3 text-[12px]"
+  const shuffle = useCallback(() => {
+    void api.refreshFeed().catch(() => undefined).finally(() => {
+      setRevision(value => value + 1);
+      toast("已按最新评分与喜好重排推荐");
+    });
+  }, []);
+
+  return (
+    <FeedContent
+      key={revision}
+      onUnauthorized={onUnauthorized}
+      enabled={enabled}
+      onRefresh={shuffle}
+      preferencesTrigger={
+        <FeedPreferencesButton onSaved={() => setRevision(value => value + 1)} />
+      }
     />
-    <FeedContent key={revision} onUnauthorized={onUnauthorized} enabled={enabled} onRefresh={shuffle} />
-  </>;
+  );
 }
 
-function FeedContent({ onUnauthorized, enabled, onRefresh }: { onUnauthorized: () => void; enabled: boolean; onRefresh: () => void }) {
+function FeedContent({
+  onUnauthorized, enabled, onRefresh, preferencesTrigger,
+}: {
+  onUnauthorized: () => void; enabled: boolean; onRefresh: () => void; preferencesTrigger: ReactNode;
+}) {
   const [items, setItems] = useState<Media[]>([]);
   const [organize, setOrganize] = useState(false);
   const [state, setState] = useState<"loading" | "ready" | "empty" | "error">("loading");
@@ -338,10 +343,12 @@ function FeedContent({ onUnauthorized, enabled, onRefresh }: { onUnauthorized: (
   const load = useCallback(async () => {
     if (loading.current) return;
     loading.current = true;
-    const request = new AbortController(); controller.current = request;
+    const request = new AbortController();
+    controller.current = request;
     try {
-      const page = await api.feed(6, request.signal);
+      const page = await api.feed(8, request.signal);
       if (request.signal.aborted) return;
+      hydrateMediaRatings(page.items);
       setItems(current => mergeFeed(current, page.items));
       setState(current => page.items.length || current === "ready" ? "ready" : "empty");
     } catch (error) {
@@ -353,27 +360,40 @@ function FeedContent({ onUnauthorized, enabled, onRefresh }: { onUnauthorized: (
     }
   }, [onUnauthorized]);
 
-  useEffect(() => { void load(); return () => { controller.current?.abort(); loading.current = false; }; }, [load]);
+  useEffect(() => {
+    void load();
+    return () => { controller.current?.abort(); loading.current = false; };
+  }, [load]);
 
-  if (state === "loading") return <Centered>正在加载…</Centered>;
-  if (state === "error") return <Centered>加载失败，<button className="text-accent" onClick={() => { setState("loading"); void load(); }}>重试</button></Centered>;
-  if (state === "empty") return <Centered>当前偏好下没有短视频。可以调整左上角的偏好；新片库请先在设置中扫描视频目录。</Centered>;
+  if (state === "loading") return <Centered>正在按喜好编排放映…</Centered>;
+  if (state === "error") {
+    return (
+      <Centered>
+        加载失败，<button className="text-gold-bright underline" onClick={() => { setState("loading"); void load(); }}>重试</button>
+      </Centered>
+    );
+  }
+  if (state === "empty") {
+    return (
+      <Centered>
+        当前偏好下没有短视频；可在设置中扫描目录或调整推荐偏好。
+      </Centered>
+    );
+  }
   return (
-    <>
-      <SlotButton
-        ariaLabel={organize ? "完成整理" : "开启极速整理"}
-        ariaPressed={organize}
-        active={organize}
-        onClick={() => { haptic(8); setOrganize(value => !value); }}
-        label={organize ? "完成" : "整理"}
-        hoverLabel={organize ? "退出" : "分拣"}
-        className="fixed right-3 top-[max(0.75rem,env(safe-area-inset-top))] z-20 h-10 px-4 text-[13px] font-semibold"
-      />
-      <ClipList items={items} setItems={setItems} onNearEnd={load} onRefresh={onRefresh} organize={organize} enabled={enabled} />
-    </>
+    <ClipList
+      items={items}
+      setItems={setItems}
+      onNearEnd={load}
+      onRefresh={onRefresh}
+      organize={organize}
+      onToggleOrganize={() => setOrganize(v => !v)}
+      preferencesTrigger={preferencesTrigger}
+      enabled={enabled}
+    />
   );
 }
 
 export function Centered({ children }: { children: React.ReactNode }) {
-  return <div className="grid h-dvh place-items-center px-8 text-center text-[15px] leading-relaxed text-muted">{children}</div>;
+  return <div className="grid size-full place-items-center px-8 text-center text-[15px] leading-relaxed text-muted">{children}</div>;
 }
