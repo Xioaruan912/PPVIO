@@ -37,6 +37,7 @@ from ppvio.infrastructure.sqlite_tag_filing import PlayerTagFilingRepositoryMixi
 from ppvio.infrastructure.sqlite_legacy_tags import PlayerLegacyTagRepositoryMixin
 from ppvio.infrastructure.sqlite_tags import PlayerTagRepositoryMixin
 from ppvio.infrastructure.sqlite_bookmarks import PlayerBookmarkRepositoryMixin
+from ppvio.infrastructure.sqlite_recommendations import PlayerRecommendationRepositoryMixin
 from ppvio.infrastructure.sqlite_watched import PlayerWatchedRepositoryMixin
 from ppvio.infrastructure.video_query import build_video_count, build_video_query
 
@@ -58,6 +59,7 @@ class PlayerCatalogRepositorySQLite(
     PlayerFeedPreferencesRepositoryMixin,
     PlayerFeedSessionRepositoryMixin,
     PlayerBookmarkRepositoryMixin,
+    PlayerRecommendationRepositoryMixin,
     PlayerWatchedRepositoryMixin,
     PlayerDuplicateCopyRepositoryMixin,
     PlayerDuplicateReviewRepositoryMixin,

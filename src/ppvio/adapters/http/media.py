@@ -256,6 +256,8 @@ class PlayerMediaHttpMixin:
         # same-origin route, never a WebDAV path or credential.
         cover = await self._repository.active_cover(media_id)
         manual_cover = await self._repository.get_manual_cover(media_id)
+        star_reader = getattr(self._repository, "get_star_rating", None)
+        rating = await star_reader(media_id) if callable(star_reader) else None
         return {
             "id": media_id,
             "width": details["width"],
@@ -271,6 +273,7 @@ class PlayerMediaHttpMixin:
                else {}),
             "organized": await self._repository.is_organized(media_id),
             "premium": await self._repository.is_premium(media_id),
+            "rating": rating,
             "favorite": (
                 await self._repository.is_global_favorite(media_id)
                 if self._favorite_backup is not None

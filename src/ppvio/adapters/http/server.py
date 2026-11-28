@@ -38,6 +38,7 @@ from .feed_preferences import PlayerFeedPreferencesHttpMixin
 from .curation import PlayerCurationHttpMixin
 from .bookmarks import PlayerBookmarkHttpMixin
 from .previews import PlayerPreviewHttpMixin
+from .ratings import PlayerRatingHttpMixin
 
 from ppvio.application.auth import SessionService
 from ppvio.application.favorite_backup import FavoriteBackupService
@@ -102,7 +103,7 @@ _SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
 }
-class PlayerHttpServer(PlayerTagCollectionHttpMixin, PlayerTagFilingHttpMixin, PlayerExperienceHttpMixin, PlayerManualCoverHttpMixin, PlayerFeedPreferencesHttpMixin, PlayerCurationHttpMixin, PlayerPreviewHttpMixin, PlayerBookmarkHttpMixin, PlayerStatusHttpMixin, PlayerTagHttpMixin, PlayerDuplicateReviewHttpMixin, PlayerWatchedHttpMixin, PlayerHttpStreamingMixin, PlayerStorageSettingsHttpMixin, PlayerReadModeHttpMixin, PlayerLibraryHttpMixin, PlayerMediaHttpMixin):
+class PlayerHttpServer(PlayerRatingHttpMixin, PlayerTagCollectionHttpMixin, PlayerTagFilingHttpMixin, PlayerExperienceHttpMixin, PlayerManualCoverHttpMixin, PlayerFeedPreferencesHttpMixin, PlayerCurationHttpMixin, PlayerPreviewHttpMixin, PlayerBookmarkHttpMixin, PlayerStatusHttpMixin, PlayerTagHttpMixin, PlayerDuplicateReviewHttpMixin, PlayerWatchedHttpMixin, PlayerHttpStreamingMixin, PlayerStorageSettingsHttpMixin, PlayerReadModeHttpMixin, PlayerLibraryHttpMixin, PlayerMediaHttpMixin):
     """Small authenticated HTTP boundary around Player-only services.
 
     This adapter intentionally accepts only Player repository IDs. It has no
@@ -264,6 +265,7 @@ class PlayerHttpServer(PlayerTagCollectionHttpMixin, PlayerTagFilingHttpMixin, P
         self._register_manual_cover_routes(app)
         self._register_tag_filing_routes(app)
         self._register_tag_collection_routes(app)
+        self._register_rating_routes(app)
         app.router.add_get("/api/v1/videos", self._videos)
         app.router.add_get("/api/v1/groups/{group_id}/videos", self._group_videos)
         app.router.add_get("/api/v1/favorites", self._favorites)

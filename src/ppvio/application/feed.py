@@ -5,6 +5,7 @@ import random
 
 from ppvio.domain.feed import apply_recent_exclusion, unseen_first
 from ppvio.domain.feed_preferences import preferred_cycle
+from ppvio.domain.recommendations import recommended_cycle, score_library
 
 
 class ShuffleDeckService:
@@ -74,18 +75,56 @@ class ShuffleDeckService:
             session_digest, limit=self._recent_exclusion
         )
         watched = await self._repository.watched_media_ids()
+        scores: dict[str, float] = {}
+        disliked: frozenset[str] = frozenset()
+        taste_active = False
+        signal_loader = getattr(self._repository, "load_recommendation_signals", None)
+        if signal_loader is not None:
+            signals, _tag_names = await signal_loader()
+            scores, disliked, summary = score_library(signals)
+            taste_active = summary.active
         if candidates is not None:
-            deck = preferred_cycle(eligible, preferred=candidates.preferred_ids, watched=watched,
-                                   recent=recent, recent_target=self._recent_exclusion, rng=self._rng)
+            if taste_active:
+                deck = recommended_cycle(
+                    eligible,
+                    preferred=candidates.preferred_ids,
+                    watched=watched,
+                    recent=recent,
+                    recent_target=self._recent_exclusion,
+                    scores=scores,
+                    disliked=disliked,
+                    rng=self._rng,
+                )
+            else:
+                deck = preferred_cycle(
+                    eligible,
+                    preferred=candidates.preferred_ids,
+                    watched=watched,
+                    recent=recent,
+                    recent_target=self._recent_exclusion,
+                    rng=self._rng,
+                )
             await self._repository.write_preferred_feed_cycle(
                 session_digest, cycle=cycle, media_ids=deck, revision=candidates.revision
             )
             return
-        deck = apply_recent_exclusion(
-            unseen_first(eligible, watched=watched, rng=self._rng),
-            recent=recent,
-            target=self._recent_exclusion,
-        )
+        if taste_active:
+            deck = recommended_cycle(
+                eligible,
+                preferred=frozenset(),
+                watched=watched,
+                recent=recent,
+                recent_target=self._recent_exclusion,
+                scores=scores,
+                disliked=disliked,
+                rng=self._rng,
+            )
+        else:
+            deck = apply_recent_exclusion(
+                unseen_first(eligible, watched=watched, rng=self._rng),
+                recent=recent,
+                target=self._recent_exclusion,
+            )
         await self._repository.write_feed_cycle(session_digest, cycle=cycle, media_ids=deck)
 
     async def favorite(self, session_digest: str, media_id: str) -> None:
