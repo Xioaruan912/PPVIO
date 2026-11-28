@@ -5,7 +5,7 @@ import { Grid, usePages } from "../ui/Grid";
 import { useLocked } from "../ui/privacy";
 import type { Open } from "./Library";
 
-const action = "h-10 rounded-full border border-line bg-surface/70 px-4 text-[14px] font-medium text-ink hover:border-gold/50 disabled:opacity-45";
+const action = "h-10 rounded-full border border-line bg-surface px-4 text-[14px] font-medium text-ink shadow-[0_2px_8px_rgba(20,22,25,0.04)] hover:border-gold/50 hover:text-gold disabled:opacity-45";
 
 export const tagCollectionAPI = {
   async list(tagId: number | null, offset = 0, signal?: AbortSignal): Promise<Page> {
@@ -57,10 +57,13 @@ export function TagCollections({ onOpen, onManage, refresh = 0, notice }: {
   const matches = tags.filter(tag => tag.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
 
   return (
-    <main className="mx-auto flex h-full w-full max-w-7xl flex-col overflow-hidden px-4 pb-3 pt-4 sm:px-8 sm:pb-5 sm:pt-5">
-      <header className="mb-3 flex shrink-0 flex-wrap items-center gap-3">
-        <h1 className="text-[24px] font-semibold leading-none tracking-[-0.03em] text-ink sm:text-[28px]">标签收藏</h1>
-        <div className="relative ml-auto w-44 sm:w-56">
+    <main className="mx-auto flex h-full w-full max-w-7xl flex-col overflow-hidden px-4 pb-[max(0.85rem,env(safe-area-inset-bottom))] pt-3 sm:px-8 sm:pb-5 sm:pt-5">
+      <header className="mb-3 flex shrink-0 flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-3">
+        <div className="flex items-center justify-between gap-2 sm:contents">
+          <h1 className="text-[22px] font-semibold leading-none tracking-[-0.03em] text-ink sm:text-[28px]">标签收藏</h1>
+          <button type="button" aria-label="管理标签" onClick={onManage} className={`${action} sm:order-3`}>管理标签</button>
+        </div>
+        <div className="relative w-full sm:order-2 sm:ml-auto sm:w-56">
           <MagnifyingGlassIcon size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
           <input
             type="search"
@@ -68,10 +71,9 @@ export function TagCollections({ onOpen, onManage, refresh = 0, notice }: {
             placeholder="筛选标签"
             value={query}
             onChange={event => setQuery(event.target.value)}
-            className="h-9.5 w-full rounded-full border border-line bg-surface/70 pl-9 pr-3.5 text-[14px] text-ink placeholder:text-faint outline-none focus:border-gold/55"
+            className="h-9.5 w-full rounded-full border border-line bg-surface pl-9 pr-3.5 text-[14px] text-ink placeholder:text-faint shadow-[0_2px_8px_rgba(20,22,25,0.04)] outline-none focus:border-gold/55"
           />
         </div>
-        <button type="button" aria-label="管理标签" onClick={onManage} className={action}>管理标签</button>
       </header>
 
       {notice}
@@ -84,7 +86,7 @@ export function TagCollections({ onOpen, onManage, refresh = 0, notice }: {
           aria-pressed={selected === null}
           onClick={() => setSelected(null)}
           className={`h-9.5 shrink-0 rounded-full border px-4 text-[14px] transition-colors ${
-            selected === null ? "border-gold bg-gold font-semibold text-bg" : "border-line bg-surface/70 text-ink/90 hover:border-gold/45"
+            selected === null ? "border-gold bg-gold font-semibold text-white" : "border-line bg-surface text-ink hover:border-gold/45 hover:text-gold"
           }`}
         >
           全部
@@ -97,11 +99,11 @@ export function TagCollections({ onOpen, onManage, refresh = 0, notice }: {
             aria-pressed={selected === tag.id}
             onClick={() => setSelected(tag.id)}
             className={`inline-flex h-9.5 shrink-0 items-center gap-2 rounded-full border px-4 text-[14px] transition-colors ${
-              selected === tag.id ? "border-gold bg-gold font-semibold text-bg" : "border-line bg-surface/70 text-ink/90 hover:border-gold/45"
+              selected === tag.id ? "border-gold bg-gold font-semibold text-white" : "border-line bg-surface text-ink hover:border-gold/45 hover:text-gold"
             }`}
           >
             <span>{tag.name}</span>
-            <span className={`tabular-nums text-[13px] ${selected === tag.id ? "text-bg/75" : "text-muted"}`}>{tag.count}</span>
+            <span className={`tabular-nums text-[13px] ${selected === tag.id ? "text-white/75" : "text-muted"}`}>{tag.count}</span>
           </button>
         ))}
       </div>

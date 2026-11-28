@@ -9,7 +9,6 @@ import { toast } from "../ui/toast";
 import { FeedItem } from "./FeedItem";
 import type { BufferReadiness } from "./useFeedPlayback";
 import { curationApi } from "../curationApi";
-import { FeedPreferencesButton } from "../ui/FeedPreferences";
 import { QuickTagPanel } from "../ui/QuickTags";
 import { ensureGsap, gsap } from "../ui/gsap";
 import { prewarmMedia } from "../ui/prewarm";
@@ -322,17 +321,14 @@ export function Feed({ onUnauthorized, enabled = true }: { onUnauthorized: () =>
       onUnauthorized={onUnauthorized}
       enabled={enabled}
       onRefresh={shuffle}
-      preferencesTrigger={
-        <FeedPreferencesButton onSaved={() => setRevision(value => value + 1)} />
-      }
     />
   );
 }
 
 function FeedContent({
-  onUnauthorized, enabled, onRefresh, preferencesTrigger,
+  onUnauthorized, enabled, onRefresh,
 }: {
-  onUnauthorized: () => void; enabled: boolean; onRefresh: () => void; preferencesTrigger: ReactNode;
+  onUnauthorized: () => void; enabled: boolean; onRefresh: () => void;
 }) {
   const [items, setItems] = useState<Media[]>([]);
   const [organize, setOrganize] = useState(false);
@@ -388,7 +384,6 @@ function FeedContent({
       onRefresh={onRefresh}
       organize={organize}
       onToggleOrganize={() => setOrganize(v => !v)}
-      preferencesTrigger={preferencesTrigger}
       enabled={enabled}
     />
   );

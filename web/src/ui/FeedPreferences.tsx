@@ -49,7 +49,7 @@ export function FeedPreferencesButton({ onSaved, className = "" }: { onSaved: ()
   };
   return <>
     <button type="button" aria-label="刷流偏好" onClick={() => void load()}
-      className={`pressable grid size-9 place-items-center rounded-full border border-line bg-surface/70 text-ink/85 hover:border-gold/45 hover:text-ink ${className}`}>
+      className={`pressable grid size-9 place-items-center rounded-full border border-line bg-bg text-ink/80 hover:border-gold/45 hover:bg-gold-soft hover:text-gold ${className}`}>
       <SlidersHorizontalIcon size={17} weight="bold" />
     </button>
     <Sheet open={open} onClose={close} title="刷流偏好">
@@ -83,10 +83,10 @@ export function FeedPreferencesButton({ onSaved, className = "" }: { onSaved: ()
           {value ? "保存失败，已保留选择，请重试。" : "偏好加载失败。"}
           {!value && <button type="button" aria-label="重试偏好设置" onClick={() => void load()} className="ml-3 min-h-10 underline">重试</button>}
         </div>}
-        <div className="sticky bottom-0 flex gap-2 bg-[#14161b]/95 py-2.5 backdrop-blur-md">
+        <div className="sticky bottom-0 flex gap-2 bg-surface/95 py-2.5 backdrop-blur-md">
           <button type="button" aria-label="取消偏好设置" disabled={saving} onClick={close} className="pressable min-h-11 flex-1 rounded-full bg-raised text-[14px] font-medium text-ink disabled:opacity-40">取消</button>
           <button type="submit" disabled={!value || saving || (value.mode === "only" && !value.preferred_tags.length)}
-            className="pressable min-h-11 flex-1 rounded-full bg-ink text-[14px] font-semibold text-bg disabled:opacity-40">{saving ? "保存中…" : "保存偏好"}</button>
+            className="glass-pill-gold pressable min-h-11 flex-1 rounded-full text-[14px] font-semibold disabled:opacity-40">{saving ? "保存中…" : "保存偏好"}</button>
         </div>
       </form>
     </Sheet>

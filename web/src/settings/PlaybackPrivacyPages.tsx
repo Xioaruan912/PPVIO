@@ -43,7 +43,7 @@ export function PlaybackPage({ mode, onModeChange, onBack }: {
       <SettingsSection title="画质与传输">
         <PrefToggle pref="lowRes" title="低清优先" hint="有 480p 副本时优先起播，缓存与拖动响应更快" />
         {mode?.direct_available && (
-          <label className="flex cursor-pointer items-center justify-between gap-4 px-4 py-3.5 transition-colors hover:bg-white/[0.025]">
+          <label className="flex cursor-pointer items-center justify-between gap-4 px-4 py-3.5 transition-colors hover:bg-ink/[0.025]">
             <span>
               <span className="block text-[15px] font-medium text-ink">115 直连</span>
               <span className="mt-0.5 block text-[13px] leading-snug text-muted">直接从 115 获取视频流，通常更快；如遇网络异常可关掉改走网盘</span>

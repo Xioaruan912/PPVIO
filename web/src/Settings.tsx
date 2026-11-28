@@ -4,33 +4,32 @@ import { useEffect, useState } from "react";
 import { api, type Status } from "./api";
 import { usePrefs } from "./prefs";
 import { useTasteProfile } from "./ratings";
-import { SPRING_PILL, SPRING_STAGE } from "./ui/motion";
-import { normalizeFolder, PrefToggle, SettingsSection } from "./settings/shared";
+import { SPRING_PILL } from "./ui/motion";
+import { IosSwitch, normalizeFolder, PrefToggle, SettingsSection } from "./settings/shared";
 import { StoragePage } from "./settings/StoragePage";
-import { PlaybackPage, PrivacyPage } from "./settings/PlaybackPrivacyPages";
 import { MaintenancePage } from "./settings/MaintenancePage";
 import { haptic } from "./ui/haptics";
+import { toast } from "./ui/toast";
 
 export { normalizeFolder };
 
-type Chapter = "hub" | "storage" | "playback" | "privacy" | "maintenance";
+type Chapter = "general" | "storage" | "maintenance";
 const CHAPTERS: readonly [Chapter, string][] = [
-  ["hub", "总览"],
-  ["storage", "网盘"],
-  ["playback", "播放"],
-  ["privacy", "隐私"],
-  ["maintenance", "维护"],
+  ["general", "播放与隐私"],
+  ["storage", "网盘目录"],
+  ["maintenance", "片库维护"],
 ];
 
 /**
- * Direction A — Single-Viewport Horizontal Chapter Folio for Settings:
- * - Zero long vertical scrolling page; switches cleanly left/right between 5 focused chapters
- * - Shows live Taste Recommendation profile summary alongside playback/privacy status
+ * Pure 3-Chapter Settings Folio:
+ * 1. 播放与隐私 (Overview metrics + 115 direct / 480p / Cover blur / Idle lock + Logout)
+ * 2. 网盘目录 (WebDAV & library roots)
+ * 3. 片库维护 (Status, cache, watched window, duplicates)
  */
 export function Settings({ onLoggedOut, onDuplicates }: { onLoggedOut: () => void; onDuplicates: () => void }) {
   const prefs = usePrefs();
   const taste = useTasteProfile();
-  const [page, setPage] = useState<Chapter>("hub");
+  const [page, setPage] = useState<Chapter>("general");
   const [dir, setDir] = useState<1 | -1>(1);
   const [status, setStatus] = useState<Status | null>(null);
   const [mode, setMode] = useState<{ mode: "webdav" | "direct"; direct_available: boolean } | null>(null);
@@ -74,11 +73,10 @@ export function Settings({ onLoggedOut, onDuplicates }: { onLoggedOut: () => voi
   }, [currentIdx]);
 
   return (
-    <main className="mx-auto flex h-full w-full max-w-4xl flex-col overflow-hidden px-4 pb-4 pt-4 sm:px-8 sm:pb-5 sm:pt-5">
-      {/* Chapter Header */}
+    <main className="mx-auto flex h-full w-full max-w-4xl flex-col overflow-hidden px-4 pb-[max(0.85rem,env(safe-area-inset-bottom))] pt-3 sm:px-8 sm:pb-5 sm:pt-5">
       <header className="mb-4 flex shrink-0 flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-[22px] font-semibold leading-none tracking-[-0.03em] text-ink sm:text-[28px]">设置</h1>
-        <div className="flex w-full items-center justify-between gap-1 rounded-full border border-line bg-surface/70 p-1 sm:w-auto" role="tablist">
+        <div className="flex w-full items-center justify-between gap-1 rounded-full border border-line bg-surface p-1 shadow-[0_2px_10px_-4px_rgba(20,22,25,0.06)] sm:w-auto" role="tablist">
           {CHAPTERS.map(([key, label]) => {
             const active = page === key;
             return (
@@ -88,8 +86,8 @@ export function Settings({ onLoggedOut, onDuplicates }: { onLoggedOut: () => voi
                 role="tab"
                 aria-selected={active}
                 onClick={() => goTo(key)}
-                className={`relative h-8.5 flex-1 rounded-full px-3 text-[13.5px] transition-colors sm:h-9 sm:flex-none sm:px-4 sm:text-[14px] ${
-                  active ? "font-semibold text-bg" : "text-muted hover:text-ink"
+                className={`relative h-8.5 flex-1 rounded-full px-3.5 text-[13.5px] transition-colors sm:h-9 sm:flex-none sm:px-4 sm:text-[14px] ${
+                  active ? "font-semibold text-white" : "text-muted hover:text-ink"
                 }`}
               >
                 {active && (
@@ -99,26 +97,24 @@ export function Settings({ onLoggedOut, onDuplicates }: { onLoggedOut: () => voi
                     className="absolute inset-0 rounded-full bg-gold"
                   />
                 )}
-                <span className="relative z-10">{label}</span>
+                <span className="relative z-10 whitespace-nowrap">{label}</span>
               </button>
             );
           })}
         </div>
       </header>
 
-      {/* Active Chapter Stage */}
       <div className="relative min-h-0 flex-1 overflow-y-auto pr-1 [scrollbar-width:none]">
         <AnimatePresence mode="wait" initial={false}>
-          {page === "hub" && (
+          {page === "general" && (
             <motion.div
-              key="hub"
-              initial={{ opacity: 0, x: dir * 28 }}
+              key="general"
+              initial={{ opacity: 0, x: dir * 18 }}
               animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: dir * -24 }}
-              transition={SPRING_STAGE}
+              exit={{ opacity: 0, x: dir * -14 }}
+              transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
               className="space-y-5"
             >
-              {/* Clean Editorial Status Grid — High typographic contrast, zero clutter */}
               <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <MetricBlock label="片库规模" value={status?.scan?.active_videos != null ? String(status.scan.active_videos) : "—"} />
                 <MetricBlock label="已评影片" value={String(taste.rated_count)} accent={taste.active} />
@@ -126,12 +122,32 @@ export function Settings({ onLoggedOut, onDuplicates }: { onLoggedOut: () => voi
                 <MetricBlock label="起播画质" value={prefs.lowRes ? "480P 优先" : "原画直出"} />
               </section>
 
-              <SettingsSection title="常用开关">
-                <PrefToggle pref="coverBlur" title="封面防窥" hint="片库与标签默认启用折光模糊" />
-                <PrefToggle pref="lowRes" title="极速起播" hint="优先加载 480P 副本，切页更快" />
+              <SettingsSection title="播放与传输">
+                <PrefToggle pref="lowRes" title="480P 极速起播" hint="优先播放轻量化副本，滑切更流畅" />
+                {mode?.direct_available && (
+                  <label className="flex cursor-pointer items-center justify-between gap-4 px-4 py-3.5 transition-colors hover:bg-ink/[0.025]">
+                    <span>
+                      <span className="block text-[15px] font-medium text-ink">115 直连</span>
+                      <span className="mt-0.5 block text-[13px] leading-snug text-muted">跳过网盘代理直连取流，起播与拖动更快</span>
+                    </span>
+                    <IosSwitch
+                      checked={mode.mode === "direct"}
+                      onChange={checked => {
+                        const next = checked ? "direct" : "webdav";
+                        void api.setReadMode(next).then(() => setMode({ ...mode, mode: next })).catch(() => toast("切换失败"));
+                      }}
+                    />
+                  </label>
+                )}
               </SettingsSection>
 
-              <div className="flex justify-end pt-2">
+              <SettingsSection title="隐私防护">
+                <PrefToggle pref="coverBlur" title="封面防窥" hint="片库与标签封面默认模糊，点顶栏眼睛随时切换" />
+                <PrefToggle pref="peekOnHold" title="按住 / 悬停偷看封面" hint="模糊模式下长按或悬停单张临时清晰" />
+                <PrefToggle pref="privacyLock" title="离开自动遮屏" hint="切到后台或静置一分钟自动暂停并遮住画面" />
+              </SettingsSection>
+
+              <div className="flex justify-end pt-1">
                 <button
                   type="button"
                   onClick={() => void api.logout().finally(onLoggedOut)}
@@ -144,49 +160,36 @@ export function Settings({ onLoggedOut, onDuplicates }: { onLoggedOut: () => voi
           )}
 
           {page === "storage" && (
-            <motion.div key="storage" initial={{ opacity: 0, x: dir * 28 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: dir * -24 }} transition={SPRING_STAGE}>
-              <StoragePage onBack={() => goTo("hub")} />
-            </motion.div>
-          )}
-
-          {page === "playback" && (
-            <motion.div key="playback" initial={{ opacity: 0, x: dir * 28 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: dir * -24 }} transition={SPRING_STAGE}>
-              <PlaybackPage mode={mode} onModeChange={setMode} onBack={() => goTo("hub")} />
-            </motion.div>
-          )}
-
-          {page === "privacy" && (
-            <motion.div key="privacy" initial={{ opacity: 0, x: dir * 28 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: dir * -24 }} transition={SPRING_STAGE}>
-              <PrivacyPage onBack={() => goTo("hub")} />
+            <motion.div key="storage" initial={{ opacity: 0, x: dir * 18 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: dir * -14 }} transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}>
+              <StoragePage onBack={() => goTo("general")} />
             </motion.div>
           )}
 
           {page === "maintenance" && (
-            <motion.div key="maintenance" initial={{ opacity: 0, x: dir * 28 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: dir * -24 }} transition={SPRING_STAGE}>
+            <motion.div key="maintenance" initial={{ opacity: 0, x: dir * 18 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: dir * -14 }} transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}>
               <MaintenancePage
                 status={status}
                 watched={watched}
                 onWatchedChange={setWatched}
                 dupes={dupes}
                 onDuplicates={onDuplicates}
-                onBack={() => goTo("hub")}
+                onBack={() => goTo("general")}
               />
             </motion.div>
           )}
         </AnimatePresence>
       </div>
 
-      {/* Bottom Order & Chaos Chapter Progress Rail */}
       <footer className="mt-3 flex shrink-0 items-center justify-between gap-4 border-t border-line pt-3">
-        <div className="flex flex-1 items-center gap-2.5 max-w-md">
+        <div className="flex flex-1 items-center gap-2.5 max-w-xs">
           {CHAPTERS.map(([key, label], i) => {
             const active = i === currentIdx;
             return (
-              <button key={key} type="button" onClick={() => goTo(key)} className="flex flex-1 flex-col gap-1.5 text-left">
-                <span className={`text-[13px] ${active ? "font-semibold text-ink" : "text-faint"}`}>
+              <button key={key} type="button" onClick={() => goTo(key)} className="group flex flex-1 flex-col gap-1.5 text-left">
+                <span className={`tabular-nums text-[13px] transition-colors ${active ? "font-semibold text-gold" : "text-faint group-hover:text-muted"}`}>
                   {String(i + 1).padStart(2, "0")}
                 </span>
-                <span className={`block h-[2px] w-full ${active ? "bg-gold" : "bg-white/15"}`} />
+                <span className={`block h-[2px] w-full rounded-full transition-colors ${active ? "bg-gold" : "bg-ink/12 group-hover:bg-ink/25"}`} />
                 <span className="sr-only">{label}</span>
               </button>
             );
@@ -198,7 +201,7 @@ export function Settings({ onLoggedOut, onDuplicates }: { onLoggedOut: () => voi
             aria-label="上一章"
             disabled={currentIdx <= 0}
             onClick={() => goTo(CHAPTERS[currentIdx - 1][0])}
-            className="grid size-10 place-items-center rounded-full border border-line bg-surface/70 text-ink hover:border-gold/50 disabled:opacity-25"
+            className="grid size-10 place-items-center rounded-full border border-line bg-surface text-ink shadow-[0_2px_8px_rgba(20,22,25,0.05)] hover:border-gold/50 hover:text-gold disabled:opacity-35"
           >
             <CaretLeftIcon size={18} weight="bold" />
           </button>
@@ -207,7 +210,7 @@ export function Settings({ onLoggedOut, onDuplicates }: { onLoggedOut: () => voi
             aria-label="下一章"
             disabled={currentIdx >= CHAPTERS.length - 1}
             onClick={() => goTo(CHAPTERS[currentIdx + 1][0])}
-            className="grid size-10 place-items-center rounded-full border border-line bg-surface/70 text-ink hover:border-gold/50 disabled:opacity-25"
+            className="grid size-10 place-items-center rounded-full border border-line bg-surface text-ink shadow-[0_2px_8px_rgba(20,22,25,0.05)] hover:border-gold/50 hover:text-gold disabled:opacity-35"
           >
             <CaretRightIcon size={18} weight="bold" />
           </button>
@@ -219,9 +222,9 @@ export function Settings({ onLoggedOut, onDuplicates }: { onLoggedOut: () => voi
 
 function MetricBlock({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
   return (
-    <div className="rounded-[16px] border border-line bg-surface/75 px-4 py-4">
+    <div className="ios-card rounded-[16px] px-4 py-4">
       <div className="text-[13px] text-muted">{label}</div>
-      <div className={`mt-2 truncate text-[26px] font-semibold leading-none tracking-[-0.03em] tabular-nums ${accent ? "text-gold-bright" : "text-ink"}`}>
+      <div className={`mt-2 truncate text-[26px] font-semibold leading-none tracking-[-0.03em] tabular-nums ${accent ? "text-gold" : "text-ink"}`}>
         {value}
       </div>
     </div>

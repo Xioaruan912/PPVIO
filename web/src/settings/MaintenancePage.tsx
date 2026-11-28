@@ -47,8 +47,8 @@ export function MaintenancePage({ status, watched, dupes, onWatchedChange, onDup
             </div>
             <span className="text-[14px] font-semibold tabular-nums text-gold-bright">{pct}%</span>
           </div>
-          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/[0.08]">
-            <div className="h-full rounded-full bg-gradient-to-r from-gold to-gold-bright transition-all duration-500" style={{ width: `${pct}%` }} />
+          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-ink/10">
+            <div className="h-full rounded-full bg-gold transition-all duration-500" style={{ width: `${pct}%` }} />
           </div>
         </div>
       )}
@@ -87,7 +87,7 @@ export function MaintenancePage({ status, watched, dupes, onWatchedChange, onDup
               }} className="w-28 shrink-0" />
           </div>
         )}
-        <button type="button" onClick={onDuplicates} className="flex w-full items-center justify-between px-4 py-3.5 text-left transition-colors hover:bg-white/[0.03] active:bg-white/[0.06]">
+        <button type="button" onClick={onDuplicates} className="flex w-full items-center justify-between px-4 py-3.5 text-left transition-colors hover:bg-ink/[0.025] active:bg-ink/[0.05]">
           <span>
             <span className="block text-[15px] font-medium text-ink">疑似重复</span>
             <span className="mt-0.5 block text-[13px] leading-snug text-muted">封面和时长几乎一样的视频，留一个删其余</span>

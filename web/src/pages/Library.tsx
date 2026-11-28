@@ -1,20 +1,18 @@
 import {
   CaretLeftIcon, CaretRightIcon, CheckCircleIcon, CheckSquareOffsetIcon,
-  FolderIcon, LightningIcon, PlusIcon, QueueIcon, SlidersHorizontalIcon,
-  SparkleIcon, TagIcon, XIcon,
+  FolderIcon, LightningIcon, PlusIcon, SparkleIcon, TagIcon, XIcon,
 } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type LibraryDate, type LibraryFolder, type Media, type Tag, type VideoFilters, type VideoSort } from "../api";
 import { curationApi } from "../curationApi";
-import { addToQueue } from "../queue";
 import { useTasteProfile } from "../ratings";
 import { Grid, usePages } from "../ui/Grid";
 import { SPRING_PILL, SPRING_SHEET, SPRING_UI } from "../ui/motion";
 import { GlassSelect, GridSkeleton, ListSkeleton } from "../ui/Skeleton";
 import { haptic } from "../ui/haptics";
 import { OdometerIndex } from "../ui/CinemaChrome";
-import { Sheet, SheetButton } from "../ui/Sheet";
+import { Sheet } from "../ui/Sheet";
 import { toast } from "../ui/toast";
 import { readTriageMacros, rememberTriageMacro } from "../ui/triageMacros";
 
@@ -42,36 +40,22 @@ type View = "recommended" | "short" | "long" | "folders";
  * - Secondary tools tucked cleanly inside one minimal "更多工具" Sheet so main canvas stays serene
  */
 export function Library({
-  onOpen, onBookmarks, onCuration, onHistory, onChannels, onPremium,
-  onQueue, onMultiView, onLoops, refresh = 0, selectedFolder, onFolderChange,
+  onOpen, refresh = 0, selectedFolder, onFolderChange,
 }: {
   onOpen: Open;
-  onBookmarks?: () => void;
-  onCuration?: () => void;
-  onHistory?: () => void;
-  onChannels?: () => void;
-  onPremium?: () => void;
-  onQueue?: () => void;
-  onMultiView?: () => void;
-  onLoops?: () => void;
   refresh?: number;
   selectedFolder?: LibraryFolder | null;
   onFolderChange?: (folder: LibraryFolder | null) => void;
 }) {
-  // Keep "short" as default so existing pagination & filter workflows work identically;
-  // "recommended" sits directly next to it for instant 1-tap taste recommendations!
   const [view, setView] = useState<View>("short");
   const [localFolder, setLocalFolder] = useState<LibraryFolder | null>(null);
   const [batchMode, setBatchMode] = useState(false);
-  const [toolsOpen, setToolsOpen] = useState(false);
   const taste = useTasteProfile();
   const folder = selectedFolder === undefined ? localFolder : selectedFolder;
   const setFolder = onFolderChange ?? setLocalFolder;
 
-  const hasTools = !!(onBookmarks || onCuration || onHistory || onChannels || onPremium || onQueue || onMultiView || onLoops);
-
   return (
-    <main className="mx-auto flex h-full w-full max-w-7xl flex-col overflow-hidden px-4 pb-3 pt-4 sm:px-8 sm:pb-5 sm:pt-5">
+    <main className="mx-auto flex h-full w-full max-w-7xl flex-col overflow-hidden px-4 pb-[max(0.85rem,env(safe-area-inset-bottom))] pt-3 sm:px-8 sm:pb-5 sm:pt-5">
       {/* Clean Folio Header: 1 row on desktop, 2 crisp non-wrapping rows on 390px mobile */}
       <header className="mb-3 flex shrink-0 flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center justify-between gap-2 sm:contents">
@@ -81,7 +65,7 @@ export function Library({
                 type="button"
                 onClick={() => setFolder(null)}
                 aria-label="返回文件夹"
-                className="grid size-9 shrink-0 place-items-center rounded-full border border-line bg-surface/70 text-ink hover:border-gold/50"
+                className="grid size-9 shrink-0 place-items-center rounded-full border border-line bg-surface text-ink shadow-[0_2px_8px_rgba(20,22,25,0.05)] hover:border-gold/50 hover:text-gold"
               >
                 <CaretLeftIcon size={18} weight="bold" />
               </button>
@@ -98,30 +82,19 @@ export function Library({
                 aria-label={batchMode ? "退出批量整理" : "批量整理"}
                 aria-pressed={batchMode}
                 onClick={() => { haptic(8); setBatchMode(v => !v); }}
-                className={`inline-flex h-9 items-center gap-1.5 rounded-full border px-3 text-[13.5px] font-medium transition-colors sm:px-3.5 sm:text-[14px] ${
-                  batchMode ? "border-gold bg-gold text-bg" : "border-line bg-surface/70 text-ink hover:border-gold/50"
+                className={`inline-flex h-9 items-center gap-1.5 rounded-full border px-3.5 text-[13.5px] font-medium transition-colors sm:text-[14px] ${
+                  batchMode ? "border-gold bg-gold text-white" : "border-line bg-surface text-ink shadow-[0_2px_8px_rgba(20,22,25,0.04)] hover:border-gold/50 hover:text-gold"
                 }`}
               >
                 <CheckSquareOffsetIcon size={16} weight={batchMode ? "fill" : "regular"} />
                 <span>{batchMode ? "完成" : "多选"}</span>
               </button>
             )}
-            {!folder && hasTools && (
-              <button
-                type="button"
-                aria-label="更多片库入口"
-                onClick={() => setToolsOpen(true)}
-                className="inline-flex h-9 items-center gap-1.5 rounded-full border border-line bg-surface/70 px-3 text-[13.5px] font-medium text-ink hover:border-gold/50 sm:px-3.5 sm:text-[14px]"
-              >
-                <SlidersHorizontalIcon size={16} />
-                <span className="hidden sm:inline">空间</span>
-              </button>
-            )}
           </div>
         </div>
 
         {!folder && (
-          <div className="flex w-full items-center justify-between gap-1 rounded-full border border-line bg-surface/70 p-1 sm:order-2 sm:w-auto" role="tablist">
+          <div className="flex w-full items-center justify-between gap-1 rounded-full border border-line bg-surface p-1 shadow-[0_2px_10px_-4px_rgba(20,22,25,0.06)] sm:order-2 sm:w-auto" role="tablist">
             {(
               [
                 ["recommended", "为你推荐"],
@@ -143,7 +116,7 @@ export function Library({
                     if (key === "folders") setBatchMode(false);
                   }}
                   className={`relative flex h-8.5 flex-1 items-center justify-center gap-1 rounded-full px-2.5 text-[13px] transition-colors sm:h-9 sm:flex-none sm:px-4 sm:text-[14px] ${
-                    active ? "font-semibold text-bg" : "text-muted hover:text-ink"
+                    active ? "font-semibold text-white" : "text-muted hover:text-ink"
                   }`}
                 >
                   {active && (
@@ -182,20 +155,6 @@ export function Library({
           />
         )}
       </div>
-
-      {/* Clean Secondary Spaces Sheet — keeps every capability 1 tap away without cluttering the canvas */}
-      <Sheet open={toolsOpen} onClose={() => setToolsOpen(false)} title="更多空间">
-        <div className="space-y-1 px-1">
-          {onCuration && <SheetButton onClick={() => { setToolsOpen(false); onCuration(); }}>整理工作台</SheetButton>}
-          {onBookmarks && <SheetButton onClick={() => { setToolsOpen(false); onBookmarks(); }}>精彩片段</SheetButton>}
-          {onLoops && <SheetButton onClick={() => { setToolsOpen(false); onLoops(); }}>高光连刷</SheetButton>}
-          {onMultiView && <SheetButton onClick={() => { setToolsOpen(false); onMultiView(); }}>多屏同看</SheetButton>}
-          {onHistory && <SheetButton onClick={() => { setToolsOpen(false); onHistory(); }}>最近看过</SheetButton>}
-          {onChannels && <SheetButton onClick={() => { setToolsOpen(false); onChannels(); }}>智能频道</SheetButton>}
-          {onPremium && <SheetButton onClick={() => { setToolsOpen(false); onPremium(); }}>精品收藏</SheetButton>}
-          {onQueue && <SheetButton onClick={() => { setToolsOpen(false); onQueue(); }}>待播队列</SheetButton>}
-        </div>
-      </Sheet>
     </main>
   );
 }
@@ -370,7 +329,7 @@ function CategoryWall({
             aria-pressed={unwatched}
             onClick={() => setUnwatched(value => !value)}
             className={`h-10 shrink-0 rounded-full border px-4 text-[14px] font-medium transition-colors ${
-              unwatched ? "border-gold bg-gold font-semibold text-bg" : "border-line bg-surface/70 text-muted hover:text-ink"
+              unwatched ? "border-gold bg-gold font-semibold text-white" : "border-line bg-surface text-muted shadow-[0_2px_8px_rgba(20,22,25,0.04)] hover:border-gold/45 hover:text-ink"
             }`}
           >
             未看
@@ -384,7 +343,7 @@ function CategoryWall({
                 type="button"
                 onClick={() => setTag(t.id)}
                 className={`h-9 shrink-0 rounded-full border px-3.5 text-[14px] transition-colors ${
-                  tag === t.id ? "border-gold/60 bg-gold/18 font-semibold text-gold-bright" : "border-line bg-surface/60 text-muted hover:text-ink"
+                  tag === t.id ? "border-gold bg-gold font-semibold text-white" : "border-line bg-surface text-muted hover:border-gold/45 hover:text-ink"
                 }`}
               >
                 {t.name}
@@ -449,18 +408,6 @@ function CategoryWall({
                 <TagIcon size={15} />打标签
               </button>
               <button type="button" disabled={!selectedIds.size || savingBatch}
-                onClick={() => {
-                  const chosen = pages.items.filter(i => selectedIds.has(i.id));
-                  let added = 0;
-                  chosen.forEach(item => { if (addToQueue(item)) added++; });
-                  haptic(10);
-                  toast(added ? `已加入待播 ${added} 个` : "已在待播队列中");
-                  setBatchMode(false);
-                }}
-                className="inline-flex h-9 items-center gap-1 rounded-full border border-line px-3.5 text-[13px] font-medium disabled:opacity-35">
-                <QueueIcon size={15} />待播
-              </button>
-              <button type="button" disabled={!selectedIds.size || savingBatch}
                 onClick={() => void applyBatch({ organized: true }, "已标为整理完成")}
                 className="glass-pill-gold inline-flex h-9 items-center gap-1 rounded-full px-4 text-[13px] font-semibold disabled:opacity-35">
                 <CheckCircleIcon size={15} weight="bold" />标已整理
@@ -503,7 +450,7 @@ function CategoryWall({
                   type="button"
                   onClick={() => setPickedTags(ids => on ? ids.filter(id => id !== t.id) : ids.length < 20 ? [...ids, t.id] : ids)}
                   className={`pressable min-h-9 rounded-full border px-3.5 text-[13px] ${
-                    on ? "border-gold/60 bg-gold/22 font-semibold text-gold-bright" : "border-line bg-white/[0.04] text-ink/88"
+                    on ? "border-gold bg-gold font-semibold text-white" : "border-line bg-bg text-ink"
                   }`}
                 >
                   {t.name}
@@ -553,7 +500,7 @@ function Folders({ onPick }: { onPick: (folder: LibraryFolder) => void }) {
   useEffect(() => { if (open) void api.libraryFolders(open).then(f => setBatches(f.items)); }, [open]);
   if (dates === null) return <ListSkeleton rows={5} />;
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto rounded-[16px] border border-line bg-surface/60 divide-y divide-line">
+    <div className="ios-card min-h-0 flex-1 overflow-y-auto rounded-[18px] divide-y divide-line">
       {plain.map(f => <Row key={f.id} label={f.label} count={f.video_count} onClick={() => onPick(f)} />)}
       {dates.filter(d => d.date).map(d => (
         <div key={d.date}>
@@ -565,7 +512,7 @@ function Folders({ onPick }: { onPick: (folder: LibraryFolder) => void }) {
                 animate={{ height: "auto", opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
                 transition={SPRING_UI}
-                className="overflow-hidden divide-y divide-line/60 bg-bg/50"
+                className="overflow-hidden divide-y divide-line/60 bg-raised/55"
               >
                 {batches.map(f => <Row key={f.id} label={f.label} count={f.video_count} indent onClick={() => onPick(f)} />)}
               </motion.div>
@@ -582,7 +529,7 @@ function Row({ label, count, indent, open, onClick }: { label: string; count: nu
     <button
       type="button"
       onClick={onClick}
-      className={`flex h-14 w-full items-center gap-3 px-4 text-left transition-colors hover:bg-white/[0.03] ${indent ? "pl-10" : ""}`}
+      className={`flex h-14 w-full items-center gap-3 px-4 text-left transition-colors hover:bg-ink/[0.03] ${indent ? "pl-10" : ""}`}
     >
       <FolderIcon size={20} weight="duotone" className="shrink-0 text-gold/80" />
       <span className="min-w-0 flex-1 truncate text-[15px] font-medium text-ink">{label}</span>

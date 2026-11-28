@@ -6,7 +6,7 @@ import { toast } from "../ui/toast";
 import { EASE_HUD, SPRING_SHEET } from "../ui/motion";
 import { normalizeFolder, SettingsHeader, SettingsSection } from "./shared";
 
-const input = "h-11 w-full rounded-[13px] border border-line bg-black/55 px-3.5 text-[15px] text-ink placeholder:text-faint outline-none transition focus:border-gold/60 focus:bg-black/75";
+const input = "h-11 w-full rounded-[13px] border border-line bg-raised px-3.5 text-[15px] text-ink placeholder:text-faint outline-none transition focus:border-gold/60 focus:bg-surface";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <label className="block px-4 py-3"><span className="mb-1.5 block text-[13px] font-medium text-muted">{label}</span>{children}</label>;
@@ -60,11 +60,11 @@ export function StoragePage({ onBack, onSaved }: { onBack: () => void; onSaved?:
           <span className="mb-2.5 block text-[13px] leading-relaxed text-muted">短视频与长视频目录均可添加；第一个目录同时用于存放收藏备份。</span>
           <ul className="flex flex-col gap-2">
             {folders.map(folder => (
-              <li key={folder} className="flex h-11 items-center gap-2.5 rounded-[13px] border border-line bg-black/45 px-3">
+              <li key={folder} className="flex h-11 items-center gap-2.5 rounded-[13px] border border-line bg-bg px-3">
                 <FolderIcon size={18} weight="duotone" className="shrink-0 text-gold" />
                 <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{folder}</span>
                 <button type="button" aria-label={`移除 ${folder}`} onClick={() => setFolders(folders.filter(f => f !== folder))}
-                  className="pressable grid size-8 place-items-center rounded-full text-faint hover:bg-white/[0.06] hover:text-ink"><XIcon size={15} /></button>
+                  className="pressable grid size-8 place-items-center rounded-full text-faint hover:bg-ink/[0.06] hover:text-ink"><XIcon size={15} /></button>
               </li>
             ))}
           </ul>
@@ -99,22 +99,22 @@ function FolderPicker({ onPick, onClose }: { onPick: (path: string) => void; onC
   }, [path]);
   const up = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
   return (
-    <motion.div className="fixed inset-0 z-40 flex items-end bg-black/65 backdrop-blur-[5px] sm:items-center sm:justify-center" onClick={onClose}
+    <motion.div className="fixed inset-0 z-40 flex items-end bg-ink/28 backdrop-blur-[4px] sm:items-center sm:justify-center" onClick={onClose}
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={EASE_HUD}>
-      <motion.div className="glass-sheet flex max-h-[80dvh] w-full flex-col rounded-t-[28px] sm:max-w-md sm:rounded-[28px] sm:border sm:border-white/[0.16]" onClick={e => e.stopPropagation()}
+      <motion.div className="glass-sheet flex max-h-[80dvh] w-full flex-col rounded-t-[26px] sm:max-w-md sm:rounded-[26px] sm:border sm:border-line" onClick={e => e.stopPropagation()}
         initial={{ y: 40, opacity: 0.9 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 40, opacity: 0 }} transition={SPRING_SHEET} role="dialog" aria-label="选择文件夹">
-        <div className="mx-auto mt-2.5 h-1 w-10 rounded-full bg-gold/35 sm:hidden" aria-hidden="true" />
+        <div className="mx-auto mt-2.5 h-1 w-10 rounded-full bg-ink/16 sm:hidden" aria-hidden="true" />
         <div className="flex items-center gap-2 border-b border-line px-3 py-3">
-          <button type="button" disabled={!path} onClick={() => setPath(up)} aria-label="上一级" className="pressable grid size-9 place-items-center rounded-full hover:bg-white/[0.06] disabled:opacity-30"><CaretLeftIcon size={18} weight="bold" /></button>
+          <button type="button" disabled={!path} onClick={() => setPath(up)} aria-label="上一级" className="pressable grid size-9 place-items-center rounded-full hover:bg-ink/[0.05] disabled:opacity-30"><CaretLeftIcon size={18} weight="bold" /></button>
           <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-muted">/{path}</span>
-          <button type="button" onClick={onClose} aria-label="关闭" className="pressable grid size-9 place-items-center rounded-full hover:bg-white/[0.06]"><XIcon size={18} /></button>
+          <button type="button" onClick={onClose} aria-label="关闭" className="pressable grid size-9 place-items-center rounded-full hover:bg-ink/[0.05]"><XIcon size={18} /></button>
         </div>
         <ul className="min-h-40 flex-1 overflow-y-auto p-2">
           {names === null ? <li className="p-6 text-center text-muted">正在读取…</li>
             : names.length === 0 ? <li className="p-6 text-center text-muted">这里没有子文件夹</li>
             : names.map(name => (
               <li key={name}>
-                <button type="button" onClick={() => setPath(normalizeFolder(`${path}/${name}`))} className="pressable flex h-12 w-full items-center gap-3 rounded-[13px] px-3 text-left hover:bg-white/[0.05] active:bg-white/[0.09]">
+                <button type="button" onClick={() => setPath(normalizeFolder(`${path}/${name}`))} className="pressable flex h-12 w-full items-center gap-3 rounded-[13px] px-3 text-left hover:bg-ink/[0.045] active:bg-ink/[0.08]">
                   <FolderIcon size={20} weight="duotone" className="text-gold" /><span className="min-w-0 flex-1 truncate text-[15px]">{name}</span><CaretRightIcon size={14} className="text-faint" />
                 </button>
               </li>

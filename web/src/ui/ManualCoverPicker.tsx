@@ -158,7 +158,7 @@ export function ManualCoverPicker({ media, video, onSaved, onClose, embedded = f
     {(preview.exhausted || preview.state === "unavailable") && <button type="button" disabled={busy} onClick={preview.refresh}
       className="ios-card pressable mx-3 my-2 min-h-11 rounded-full px-4 text-sm font-medium disabled:opacity-50">刷新预览</button>}
     <button type="button" aria-label="恢复默认封面" disabled={busy} onClick={() => void save()}
-      className="pressable mt-3 min-h-11 w-full rounded-[14px] px-4 text-left text-sm text-muted hover:bg-white/[0.04] disabled:opacity-50">恢复默认封面</button>
+      className="pressable mt-3 min-h-11 w-full rounded-[14px] px-4 text-left text-sm text-muted hover:bg-ink/[0.04] disabled:opacity-50">恢复默认封面</button>
   </>;
   return embedded ? content : <Sheet open onClose={close} title="选择封面">{content}</Sheet>;
 }

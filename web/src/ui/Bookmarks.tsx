@@ -56,7 +56,7 @@ export function BookmarkButton({ media, video, enabled }: { media: Media; video:
   };
   return <>
     <button type="button" aria-label="片内书签" title="片内书签" disabled={!enabled} onClick={() => setOpen(true)}
-      className="pressable grid size-9 place-items-center rounded-full border border-line bg-surface/70 text-ink/85 hover:border-gold/45 hover:text-ink disabled:opacity-40">
+      className="pressable grid size-9 place-items-center rounded-full border border-line bg-bg text-ink/80 hover:border-gold/45 hover:bg-gold-soft hover:text-gold disabled:opacity-40">
       <BookmarkSimpleIcon size={18} weight="regular" />
     </button>
     <Sheet open={open && enabled && !locked} onClose={() => setOpen(false)} title={editing ? "编辑片段" : "片内书签"}>

@@ -108,9 +108,9 @@ function ClockDecoy({ onUnlock }: { onUnlock: () => void }) {
   const dateStr = now.toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "long" });
   return (
     <button type="button" onClick={onUnlock} aria-label="继续"
-      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#06070a] text-ink select-none">
-      <span className="text-[72px] font-light leading-none tracking-[-0.04em] tabular-nums text-white/90">{hh}:{mm}</span>
-      <span className="mt-3 text-[15px] text-white/45">{dateStr}</span>
+      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-bg text-ink select-none">
+      <span className="text-[72px] font-light leading-none tracking-[-0.04em] tabular-nums text-ink">{hh}:{mm}</span>
+      <span className="mt-3 text-[15px] text-muted">{dateStr}</span>
     </button>
   );
 }
@@ -118,24 +118,24 @@ function ClockDecoy({ onUnlock }: { onUnlock: () => void }) {
 function NotesDecoy({ onUnlock }: { onUnlock: () => void }) {
   return (
     <button type="button" onClick={onUnlock} aria-label="继续"
-      className="fixed inset-0 z-50 flex flex-col bg-[#111215] px-5 pb-12 pt-[max(2.5rem,env(safe-area-inset-top))] text-left text-ink select-none">
+      className="fixed inset-0 z-50 flex flex-col bg-bg px-5 pb-12 pt-[max(2.5rem,env(safe-area-inset-top))] text-left text-ink select-none">
       <div className="mx-auto w-full max-w-lg">
-        <div className="mb-6 flex items-baseline justify-between border-b border-white/[0.08] pb-3">
-          <span className="text-[24px] font-semibold tracking-tight text-white/90">备忘录</span>
-          <span className="text-[12px] text-white/35">已同步</span>
+        <div className="mb-6 flex items-baseline justify-between border-b border-line pb-3">
+          <span className="text-[24px] font-semibold tracking-tight text-ink">备忘录</span>
+          <span className="text-[12px] text-faint">已同步</span>
         </div>
         <div className="space-y-3">
-          <div className="rounded-[16px] bg-white/[0.04] p-4">
-            <span className="block text-[15px] font-medium text-white/85">本周待办清单</span>
-            <span className="mt-1 block text-[13px] text-white/45">1. 整理周报与项目进度 · 2. 预约体检 · 3. 采购日用品</span>
+          <div className="ios-card rounded-[16px] p-4">
+            <span className="block text-[15px] font-medium text-ink">本周待办清单</span>
+            <span className="mt-1 block text-[13px] text-muted">1. 整理周报与项目进度 · 2. 预约体检 · 3. 采购日用品</span>
           </div>
-          <div className="rounded-[16px] bg-white/[0.04] p-4">
-            <span className="block text-[15px] font-medium text-white/85">阅读摘录</span>
-            <span className="mt-1 block text-[13px] text-white/45">保持专注与克制，减少不必要的上下文切换。</span>
+          <div className="ios-card rounded-[16px] p-4">
+            <span className="block text-[15px] font-medium text-ink">阅读摘录</span>
+            <span className="mt-1 block text-[13px] text-muted">保持专注与克制，减少不必要的上下文切换。</span>
           </div>
-          <div className="rounded-[16px] bg-white/[0.04] p-4">
-            <span className="block text-[15px] font-medium text-white/85">差旅清单</span>
-            <span className="mt-1 block text-[13px] text-white/45">充电器、降噪耳机、身份证、移动电源</span>
+          <div className="ios-card rounded-[16px] p-4">
+            <span className="block text-[15px] font-medium text-ink">差旅清单</span>
+            <span className="mt-1 block text-[13px] text-muted">充电器、降噪耳机、身份证、移动电源</span>
           </div>
         </div>
       </div>

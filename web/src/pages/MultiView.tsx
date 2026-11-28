@@ -53,7 +53,7 @@ export function MultiView({ onBack, onOpen }: { onBack: () => void; onOpen: (ite
       <div className={`grid flex-1 gap-1.5 p-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] ${count === 4 ? "grid-cols-2 grid-rows-2" : "grid-cols-1 grid-rows-2 sm:grid-cols-2 sm:grid-rows-1"}`}>
         {loading && !visible.length ? (
           Array.from({ length: count }, (_, i) => (
-            <div key={i} className="animate-pulse rounded-[16px] border border-white/[0.08] bg-surface" />
+            <div key={i} className="animate-pulse rounded-[16px] border border-line bg-surface" />
           ))
         ) : visible.map((media, index) => {
           const soundOn = !locked && activeAudio === media.id;
@@ -62,17 +62,17 @@ export function MultiView({ onBack, onOpen }: { onBack: () => void; onOpen: (ite
           return (
             <div key={media.id}
               onClick={() => { haptic(8); setActiveAudio(cur => cur === media.id ? null : media.id); }}
-              className={`relative overflow-hidden rounded-[16px] bg-[#0a0b0e] transition-all ${soundOn ? "ring-2 ring-gold-bright shadow-[0_0_24px_rgba(230,198,135,0.28)]" : "ring-1 ring-white/[0.1]"}`}>
+              className={`relative overflow-hidden rounded-[16px] bg-stage transition-all ${soundOn ? "ring-2 ring-gold shadow-[0_8px_24px_-6px_rgba(30,78,104,0.3)]" : "ring-1 ring-line"}`}>
               <video src={src} poster={media.cover_url ?? undefined} autoPlay loop playsInline muted={!soundOn}
                 className="size-full object-cover" />
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-black/75 to-transparent px-2.5 pb-2 pt-8">
-                <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${soundOn ? "glass-pill-gold" : "glass-pill text-white/80"}`}>
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-ink/55 to-transparent px-2.5 pb-2 pt-8">
+                <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${soundOn ? "glass-pill-gold" : "glass-pill text-ink"}`}>
                   {soundOn ? <SpeakerHighIcon size={12} weight="fill" /> : <SpeakerSlashIcon size={12} />}
                   {soundOn ? "有声主屏" : "点按开声"}
                 </span>
                 <button type="button" aria-label={`独享播放第 ${index + 1} 路`}
                   onClick={e => { e.stopPropagation(); onOpen(visible, index); }}
-                  className="glass-pill pressable pointer-events-auto grid size-8 place-items-center rounded-full text-white hover:border-gold/40">
+                  className="glass-pill pressable pointer-events-auto grid size-8 place-items-center rounded-full text-ink hover:border-gold/45 hover:text-gold">
                   <CornersOutIcon size={15} />
                 </button>
               </div>

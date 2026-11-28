@@ -1,6 +1,6 @@
 import {
   ArrowsClockwiseIcon, CaretLeftIcon, CaretRightIcon, DotsThreeIcon, HeartIcon,
-  PlayIcon, SlidersHorizontalIcon, SpeakerHighIcon, SpeakerSlashIcon, SparkleIcon,
+  PlayIcon, SpeakerHighIcon, SpeakerSlashIcon, TagIcon,
 } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
@@ -14,7 +14,6 @@ import { useFeedPlayback, type BufferReadiness } from "./useFeedPlayback";
 import { LoadingFeedback } from "../ui/LoadingFeedback";
 import { SeekBar } from "../ui/SeekBar";
 import { SeekPreview } from "../ui/SeekPreview";
-import { BookmarkButton } from "../ui/Bookmarks";
 import { usePlaybackRecovery, RecoveryNotice } from "../player/usePlaybackRecovery";
 import { useClipRange } from "../player/clipRange";
 import { usePlaybackHistory } from "../player/usePlaybackHistory";
@@ -53,7 +52,7 @@ interface Burst { id: number; x: number; y: number }
 export function FeedItem({
   media, active, mounted, eager = false, onBufferReadiness, onRemove,
   raised = false, organizePanel, index = 0, total = 1,
-  onPrev, onNext, onRefresh, onToggleOrganize, preferencesTrigger,
+  onPrev, onNext, onRefresh, onToggleOrganize,
   startAt, onEnded,
 }: Props) {
   const prefs = usePrefs();
@@ -157,9 +156,9 @@ export function FeedItem({
       className="flex h-full w-full shrink-0 snap-start snap-always flex-col overflow-hidden bg-bg"
       aria-label="视频"
     >
-      {/* 100% UNOBSTRUCTED OPTICAL VIDEO STAGE — zero floating controls or text over the video */}
-      <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden px-2 py-2 sm:px-16 sm:py-3">
-        {/* Flanking horizontal folio arrows live cleanly in the darkroom side margins OUTSIDE the video */}
+      {/* 100% UNOBSTRUCTED KYOTO GALLERY VIDEO STAGE — museum paper room framing a restrained charcoal (#22252A) aperture */}
+      <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden px-2.5 py-2.5 sm:px-20 sm:py-5">
+        {/* Flanking horizontal folio arrows live cleanly in the bright gallery paper margins OUTSIDE the video */}
         {onPrev && (
           <motion.button
             type="button"
@@ -168,9 +167,9 @@ export function FeedItem({
             onClick={() => { haptic(6); onPrev(); }}
             whileTap={{ scale: 0.9 }}
             transition={SPRING_TAP}
-            className="absolute left-4 top-1/2 z-10 hidden size-11 -translate-y-1/2 place-items-center rounded-full border border-line bg-surface/80 text-ink transition-colors hover:border-gold/55 hover:text-gold-bright disabled:opacity-20 sm:grid"
+            className="absolute left-5 top-1/2 z-10 hidden size-11 -translate-y-1/2 place-items-center rounded-full border border-line bg-surface text-ink shadow-[0_4px_16px_-4px_rgba(20,22,25,0.1)] transition-colors hover:border-gold/55 hover:text-gold disabled:opacity-25 sm:grid"
           >
-            <CaretLeftIcon size={20} weight="bold" />
+            <CaretLeftIcon size={19} weight="bold" />
           </motion.button>
         )}
         {onNext && (
@@ -181,19 +180,31 @@ export function FeedItem({
             onClick={() => { haptic(6); onNext(); }}
             whileTap={{ scale: 0.9 }}
             transition={SPRING_TAP}
-            className="absolute right-4 top-1/2 z-10 hidden size-11 -translate-y-1/2 place-items-center rounded-full border border-line bg-surface/80 text-ink transition-colors hover:border-gold/55 hover:text-gold-bright disabled:opacity-20 sm:grid"
+            className="absolute right-5 top-1/2 z-10 hidden size-11 -translate-y-1/2 place-items-center rounded-full border border-line bg-surface text-ink shadow-[0_4px_16px_-4px_rgba(20,22,25,0.1)] transition-colors hover:border-gold/55 hover:text-gold disabled:opacity-25 sm:grid"
           >
-            <CaretRightIcon size={20} weight="bold" />
+            <CaretRightIcon size={19} weight="bold" />
           </motion.button>
         )}
 
-        {/* Dedicated unobstructed optical aperture container */}
+        {/* Museum exhibition mat (pure white surround) hugging the video's true aspect ratio, with a restrained charcoal (#22252A) inner aperture */}
         <div
           data-feed-stage
-          className={`relative flex size-full items-center justify-center overflow-hidden rounded-[16px] bg-black will-change-transform ${
-            landscape ? "max-w-5xl" : "max-w-[540px]"
-          } sm:aperture-frame`}
+          style={
+            media.width && media.height
+              ? { aspectRatio: `${media.width} / ${media.height}` }
+              : undefined
+          }
+          className={`aperture-frame relative flex items-center justify-center overflow-hidden rounded-[18px] bg-surface p-1.5 will-change-transform sm:rounded-[22px] sm:p-2.5 ${
+            media.width && media.height
+              ? landscape
+                ? "w-full max-w-5xl max-h-full"
+                : "h-full max-h-full max-w-full"
+              : landscape
+                ? "size-full max-w-5xl"
+                : "size-full max-w-[540px]"
+          }`}
         >
+          <div className="relative flex size-full items-center justify-center overflow-hidden rounded-[12px] bg-stage sm:rounded-[14px]">
           {mounted ? (
             <video
               ref={attachVideo}
@@ -250,7 +261,7 @@ export function FeedItem({
               <p className="mb-3 text-sm">片段位置已超出视频时长</p>
               <button
                 type="button"
-                className="pressable min-h-11 rounded-full bg-gold px-5 text-sm font-semibold text-bg"
+                className="pressable min-h-11 rounded-full bg-gold px-5 text-sm font-semibold text-white"
                 onClick={() => {
                   setOriginal(true);
                   setPaused(false);
@@ -269,13 +280,13 @@ export function FeedItem({
             {paused && active && (
               <motion.span
                 key="paused"
-                className="glass-pill pointer-events-none absolute left-1/2 top-1/2 -ml-9 -mt-9 grid size-18 place-items-center rounded-full border-gold/40 text-gold-bright"
+                className="glass-pill pointer-events-none absolute left-1/2 top-1/2 -ml-9 -mt-9 grid size-18 place-items-center rounded-full text-gold"
                 initial={{ opacity: 0, scale: 0.84 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 1.08 }}
                 transition={SPRING_PILL}
               >
-                <PlayIcon size={30} weight="fill" className="translate-x-0.5" />
+                <PlayIcon size={28} weight="fill" className="translate-x-0.5" />
               </motion.span>
             )}
             {fast && (
@@ -300,7 +311,7 @@ export function FeedItem({
                 transition={{ duration: 0.72, ease: [0.22, 1, 0.36, 1] }}
                 onAnimationComplete={() => setBursts(list => list.filter(b => b.id !== burst.id))}
               >
-                <HeartIcon size={80} weight="fill" className="text-gold-bright drop-shadow-[0_8px_24px_rgba(229,196,132,0.55)]" />
+                <HeartIcon size={80} weight="fill" className="text-star drop-shadow-[0_8px_24px_rgba(196,139,40,0.45)]" />
               </motion.span>
             ))}
           </AnimatePresence>
@@ -311,6 +322,7 @@ export function FeedItem({
               compatible={hasLow && !prefs.lowRes ? () => setPref("lowRes", true) : undefined}
             />
           )}
+          </div>
         </div>
       </div>
 
@@ -323,16 +335,16 @@ export function FeedItem({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 12 }}
             transition={SPRING_PILL}
-            className="mx-auto w-full max-w-2xl shrink-0 border-t border-line bg-surface/95 px-3 py-1"
+            className="mx-3 mb-2.5 shrink-0 rounded-[18px] border border-line bg-surface px-1 py-0.5 shadow-[0_10px_28px_-12px_rgba(20,22,25,0.12)] sm:mx-auto sm:w-full sm:max-w-xl"
           >
             {organizePanel}
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* DEDICATED OUTSIDE BOTTOM CONSOLE — 100% OUTSIDE THE VIDEO FRAME */}
-      <footer className="shrink-0 border-t border-line bg-bg px-3.5 pb-[max(0.7rem,env(safe-area-inset-bottom))] pt-1.5 sm:px-8">
-        <div className="mx-auto flex w-full max-w-5xl flex-col gap-1.5">
+      {/* DEDICATED OUTSIDE GALLERY BOTTOM CONSOLE — pure exhibition white separated by crisp 1px rule */}
+      <footer className="shrink-0 border-t border-line bg-surface px-3.5 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-1.5 sm:px-8">
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-2">
           {/* Unobstructed full-width timeline scrubber */}
           <SeekBar
             video={video}
@@ -344,7 +356,7 @@ export function FeedItem({
           />
 
           {/* Clean Perimeter Control Rail: 1 unified row on desktop, 2 balanced symmetric rows on 390px mobile */}
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+          <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
             {/* Row 1 (Mobile) / Left+Center (Desktop): Direct 1-Tap 5-Star Rating + Horizontal Folio Index */}
             <div className="flex items-center justify-between gap-3 sm:flex-1">
               <StarRating mediaId={media.id} compact />
@@ -356,14 +368,14 @@ export function FeedItem({
                     aria-label="上一条"
                     disabled={index <= 0}
                     onClick={() => { haptic(6); onPrev(); }}
-                    className="grid size-8 place-items-center rounded-full border border-line text-ink/85 hover:border-gold/50 disabled:opacity-25 sm:hidden"
+                    className="grid size-8 place-items-center rounded-full border border-line bg-bg text-ink/85 hover:border-gold/50 hover:text-gold disabled:opacity-35 sm:hidden"
                   >
                     <CaretLeftIcon size={15} weight="bold" />
                   </button>
                 )}
                 <div className="flex items-center gap-2.5">
                   <OdometerIndex current={index + 1} total={total} className="text-[13px]" />
-                  <div className="hidden h-[2px] w-24 overflow-hidden bg-white/15 md:block" aria-hidden="true">
+                  <div className="hidden h-[2px] w-24 overflow-hidden rounded-full bg-ink/10 md:block" aria-hidden="true">
                     <div
                       className="h-full bg-gold transition-[width] duration-300 ease-out"
                       style={{ width: `${Math.min(100, progressRatio)}%` }}
@@ -376,7 +388,7 @@ export function FeedItem({
                     aria-label="下一条"
                     disabled={index >= total - 1}
                     onClick={() => { haptic(6); onNext(); }}
-                    className="grid size-8 place-items-center rounded-full border border-line text-ink/85 hover:border-gold/50 disabled:opacity-25 sm:hidden"
+                    className="grid size-8 place-items-center rounded-full border border-line bg-bg text-ink/85 hover:border-gold/50 hover:text-gold disabled:opacity-35 sm:hidden"
                   >
                     <CaretRightIcon size={15} weight="bold" />
                   </button>
@@ -384,27 +396,27 @@ export function FeedItem({
               </div>
             </div>
 
-            {/* Row 2 (Mobile) / Right (Desktop): Minimal essential controls — ALL outside the video */}
-            <div className="flex items-center justify-between gap-1.5 sm:justify-end sm:gap-2">
+            {/* Row 2 (Mobile) / Right (Desktop): Pure essential controls only (4 icons max) */}
+            <div className="flex items-center justify-end gap-2">
               <ConsoleButton
                 label={prefs.muted ? "打开声音" : "静音"}
                 active={prefs.muted}
                 onClick={() => { haptic(6); setPref("muted", !prefs.muted); }}
               >
-                {prefs.muted ? <SpeakerSlashIcon size={18} weight="fill" /> : <SpeakerHighIcon size={18} weight="fill" />}
+                {prefs.muted ? <SpeakerSlashIcon size={18} weight="regular" /> : <SpeakerHighIcon size={18} weight="fill" />}
               </ConsoleButton>
 
-              <QuickTagButton media={media} enabled={enabled} iconOnly />
-              <BookmarkButton media={media} video={video} enabled={enabled} />
-
-              {onToggleOrganize && (
+              {onToggleOrganize ? (
                 <ConsoleButton
-                  label={raised ? "完成整理" : "开启极速整理"}
+                  label={raised ? "完成整理" : "标签整理"}
                   active={raised}
+                  prominent={raised}
                   onClick={() => { haptic(8); onToggleOrganize(); }}
                 >
-                  <SparkleIcon size={18} weight={raised ? "fill" : "regular"} />
+                  <TagIcon size={18} weight={raised ? "fill" : "regular"} />
                 </ConsoleButton>
+              ) : (
+                <QuickTagButton media={media} enabled={enabled} iconOnly />
               )}
 
               {onRefresh && (
@@ -414,21 +426,6 @@ export function FeedItem({
                 >
                   <ArrowsClockwiseIcon size={18} />
                 </ConsoleButton>
-              )}
-
-              {preferencesTrigger ?? (
-                <span className="hidden" aria-hidden="true"><SlidersHorizontalIcon size={16} /></span>
-              )}
-
-              {hasLow && (
-                <button
-                  type="button"
-                  onClick={() => setPref("lowRes", !prefs.lowRes)}
-                  aria-label="切换清晰度"
-                  className="h-9 rounded-full border border-line px-3 text-[13px] font-medium text-ink/85 hover:border-gold/50 hover:text-gold-bright"
-                >
-                  {prefs.lowRes ? "480P" : "原画"}
-                </button>
               )}
 
               <ConsoleButton label="更多" onClick={() => setMenu(true)}>
@@ -448,9 +445,9 @@ export function FeedItem({
 }
 
 function ConsoleButton({
-  label, active = false, onClick, children,
+  label, active = false, prominent = false, onClick, children,
 }: {
-  label: string; active?: boolean; onClick: () => void; children: ReactNode;
+  label: string; active?: boolean; prominent?: boolean; onClick: () => void; children: ReactNode;
 }) {
   return (
     <motion.button
@@ -462,9 +459,11 @@ function ConsoleButton({
       whileTap={{ scale: 0.88 }}
       transition={SPRING_TAP}
       className={`grid size-9 place-items-center rounded-full border transition-colors ${
-        active
-          ? "border-gold/55 bg-gold/15 text-gold-bright"
-          : "border-line bg-surface/70 text-ink/85 hover:border-gold/45 hover:text-ink"
+        prominent
+          ? "border-gold bg-gold text-white shadow-[0_4px_12px_-3px_rgba(30,78,104,0.38)]"
+          : active
+            ? "border-gold/40 bg-gold-soft text-gold"
+            : "border-line bg-bg text-ink/80 hover:border-gold/45 hover:bg-gold-soft hover:text-gold"
       }`}
     >
       {children}

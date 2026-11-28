@@ -164,8 +164,8 @@ export function StarRating({
             }}
             className={`grid place-items-center rounded-full transition-colors ${compact ? "size-8" : "size-9 sm:size-10"} ${
               filled
-                ? "text-gold-bright drop-shadow-[0_0_10px_rgba(229,196,132,0.4)]"
-                : "text-ink/25 hover:text-gold/75"
+                ? "text-star"
+                : "text-ink/22 hover:text-star/75"
             }`}
           >
             <StarIcon size={compact ? 17 : 20} weight={filled ? "fill" : "regular"} />

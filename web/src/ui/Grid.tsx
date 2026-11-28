@@ -241,14 +241,15 @@ export function Grid({
                 }}
                 onPointerUp={() => { if (peeking === item.id) setPeeking(null); clearLongPress(); }}
                 onPointerCancel={() => { if (peeking === item.id) setPeeking(null); clearLongPress(); }}
-                className={`relative block overflow-hidden rounded-[12px] border border-white/[0.08] bg-surface transition-[border-color,transform] duration-300 ${
+                className={`relative block overflow-hidden rounded-[14px] border border-line bg-surface p-1 shadow-[0_6px_20px_-10px_rgba(20,22,25,0.14)] transition-[border-color,box-shadow,transform] duration-300 ${
                   folio ? "size-full" : `w-full ${wide ? "aspect-video" : "aspect-[3/4]"}`
                 } ${
                   isSelected
-                    ? "ring-2 ring-gold-bright ring-offset-1 ring-offset-bg scale-[0.97]"
-                    : "hover:border-gold/45"
+                    ? "ring-2 ring-gold ring-offset-2 ring-offset-bg scale-[0.97]"
+                    : "hover:border-gold/45 hover:shadow-[0_12px_28px_-12px_rgba(20,22,25,0.18)]"
                 }`}
               >
+                <div className="relative size-full overflow-hidden rounded-[10px] bg-raised">
                 {item.cover_url && (
                   <Cover
                     src={item.cover_url}
@@ -271,14 +272,15 @@ export function Grid({
                 {selecting && (
                   <span
                     aria-hidden="true"
-                    className={`absolute right-2.5 top-2.5 grid size-6.5 place-items-center rounded-full border transition-colors ${
-                      isSelected ? "border-gold-bright bg-gold text-bg" : "border-white/50 bg-black/55 text-transparent"
+                    className={`absolute right-2 top-2 grid size-6.5 place-items-center rounded-full border transition-colors ${
+                      isSelected ? "border-gold bg-gold text-white shadow-sm" : "border-white/80 bg-ink/35 text-transparent backdrop-blur-xs"
                     }`}
                   >
                     <CheckIcon size={14} weight="bold" />
                   </span>
                 )}
                 <WatchedBar seconds={progress?.get(item.id)} duration={item.duration_seconds} />
+                </div>
               </motion.button>
 
               {/* Subtle hover-only preview trigger (zero resting clutter, keeps Grid preview contract) */}
@@ -307,10 +309,10 @@ export function Grid({
                   aria-current={active ? "page" : undefined}
                   className="group flex flex-1 flex-col gap-1.5 text-left"
                 >
-                  <span className={`tabular-nums text-[13px] transition-colors ${active ? "font-semibold text-ink" : "text-faint group-hover:text-muted"}`}>
+                  <span className={`tabular-nums text-[13px] transition-colors ${active ? "font-semibold text-gold" : "text-faint group-hover:text-muted"}`}>
                     {String(seg + 1).padStart(2, "0")}
                   </span>
-                  <span className={`block h-[2px] w-full transition-colors ${active ? "bg-gold" : "bg-white/15 group-hover:bg-white/30"}`} />
+                  <span className={`block h-[2px] w-full rounded-full transition-colors ${active ? "bg-gold" : "bg-ink/12 group-hover:bg-ink/25"}`} />
                 </button>
               );
             })}
@@ -328,7 +330,7 @@ export function Grid({
               aria-label="上一页"
               disabled={clampedPage <= 0}
               onClick={() => flipTo(clampedPage - 1)}
-              className="grid size-10 place-items-center rounded-full border border-line bg-surface/70 text-ink transition-colors hover:border-gold/55 disabled:opacity-25"
+              className="grid size-10 place-items-center rounded-full border border-line bg-surface text-ink shadow-[0_2px_8px_rgba(20,22,25,0.05)] transition-colors hover:border-gold/55 hover:text-gold disabled:opacity-35"
             >
               <CaretLeftIcon size={18} weight="bold" />
             </button>
@@ -337,7 +339,7 @@ export function Grid({
               aria-label="下一页"
               disabled={clampedPage >= totalPages - 1 && done}
               onClick={() => flipTo(clampedPage + 1)}
-              className="grid size-10 place-items-center rounded-full border border-line bg-surface/70 text-ink transition-colors hover:border-gold/55 disabled:opacity-25"
+              className="grid size-10 place-items-center rounded-full border border-line bg-surface text-ink shadow-[0_2px_8px_rgba(20,22,25,0.05)] transition-colors hover:border-gold/55 hover:text-gold disabled:opacity-35"
             >
               <CaretRightIcon size={18} weight="bold" />
             </button>
@@ -394,7 +396,7 @@ export function subscribeMediaChanges(listener: (change: Change) => void) {
 export function WatchedBar({ seconds, duration }: { seconds: number | undefined; duration: number | null }) {
   if (!seconds || !duration) return null;
   return (
-    <span className="absolute inset-x-0 bottom-0 h-[2.5px] bg-white/15">
+    <span className="absolute inset-x-0 bottom-0 h-[3px] bg-white/40">
       <span className="block h-full bg-gold" style={{ width: `${Math.min(100, (seconds / duration) * 100)}%` }} />
     </span>
   );
@@ -410,7 +412,7 @@ export function BlurToggle() {
       whileTap={{ scale: 0.88 }}
       transition={SPRING_TAP}
       className={`grid size-9 shrink-0 place-items-center rounded-full border transition-colors ${
-        prefs.coverBlur ? "border-gold/45 bg-gold/14 text-gold-bright" : "border-line bg-surface/60 text-muted hover:text-ink"
+        prefs.coverBlur ? "border-gold/45 bg-gold-soft text-gold" : "border-line bg-surface text-muted hover:border-gold/40 hover:text-ink"
       }`}
     >
       {prefs.coverBlur ? <EyeSlashIcon size={17} weight="fill" /> : <EyeIcon size={17} />}

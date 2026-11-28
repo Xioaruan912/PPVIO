@@ -39,7 +39,7 @@ export function Login({ onDone }: { onDone: () => void }) {
           <LockSimpleIcon size={18} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-gold/75" />
           <input id="secret" type="password" autoComplete="current-password" value={secret} onChange={event => setSecret(event.target.value)}
             placeholder="请输入口令"
-            className="h-12 w-full rounded-[16px] border border-line bg-black/55 pl-10 pr-4 text-[16px] text-ink placeholder:text-faint outline-none transition focus:border-gold/60 focus:bg-black/75" />
+            className="h-12 w-full rounded-[14px] border border-line bg-raised pl-10 pr-4 text-[16px] text-ink placeholder:text-faint outline-none transition focus:border-gold/60 focus:bg-surface" />
         </div>
         {error && <p className="mt-3 text-[13px] leading-snug text-accent" role="alert">{error}</p>}
         <motion.button type="submit" disabled={busy || !secret} whileTap={{ scale: 0.96 }} transition={SPRING_TAP}

@@ -27,10 +27,10 @@ export function Toasts() {
             exit={{ opacity: 0, y: 10, scale: 0.92 }}
             transition={SPRING_PILL}
             className="glass-dock pointer-events-auto flex items-center gap-3.5 rounded-full px-4 py-2.5 text-[14px] font-medium text-ink">
-            <span className="size-1.5 shrink-0 rounded-full bg-gold shadow-[0_0_8px_rgba(230,198,135,0.8)]" aria-hidden="true" />
+            <span className="size-1.5 shrink-0 rounded-full bg-gold" aria-hidden="true" />
             <span>{t.text}</span>
             {t.action && (
-              <button type="button" className="pressable rounded-full bg-gold-soft px-3 py-1 text-[13px] font-semibold text-gold-bright"
+              <button type="button" className="pressable rounded-full bg-gold-soft px-3 py-1 text-[13px] font-semibold text-gold"
                 onClick={() => { t.action!.run(); toasts = toasts.filter(x => x.id !== t.id); emit(); }}>
                 {t.action.label}
               </button>

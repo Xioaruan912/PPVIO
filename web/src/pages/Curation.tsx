@@ -222,13 +222,13 @@ export function Curation({ onBack, onOpen }: { onBack: () => void; onOpen: Open 
               className="relative block aspect-[3/4] w-full overflow-hidden bg-surface">
               {item.cover_url && <Cover src={item.cover_url} className={`film-grade size-full object-cover ${prefs.coverBlur ? "blur-xl scale-110" : ""}`} />}
               <FlutedPrivacyShield active={prefs.coverBlur} />
-              <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-black/80 to-transparent" />
+              <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-ink/35 to-transparent" />
               <span className="glass-pill film-slate absolute bottom-1.5 right-1.5 rounded-full px-2 py-0.5 text-[10px] text-ink">{formatDuration(item.duration_seconds)}</span>
             </button>
-            <label className={`flex min-h-10 cursor-pointer items-center justify-center gap-1.5 border-t border-line px-2 text-[12.5px] font-medium transition-colors ${isChecked ? "bg-gold/18 text-gold-bright" : "bg-surface/90 text-muted hover:text-ink"}`}>
+            <label className={`flex min-h-10 cursor-pointer items-center justify-center gap-1.5 border-t border-line px-2 text-[12.5px] font-medium transition-colors ${isChecked ? "bg-gold-soft text-gold" : "bg-surface text-muted hover:text-ink"}`}>
               <input type="checkbox" aria-label={`选择第 ${index + 1} 个视频`} checked={isChecked}
                 disabled={saving || (!isChecked && selected.length >= 100)} onChange={() => toggle(item.id)} className="sr-only" />
-              <span aria-hidden="true" className={`grid size-4.5 place-items-center rounded-full border ${isChecked ? "border-gold-bright bg-gold text-bg" : "border-line-strong text-transparent"}`}>
+              <span aria-hidden="true" className={`grid size-4.5 place-items-center rounded-full border ${isChecked ? "border-gold bg-gold text-white" : "border-line-strong text-transparent"}`}>
                 <CheckIcon size={11} weight="bold" />
               </span>
               <span>{isChecked ? "已选" : "选择"}</span>
@@ -262,10 +262,10 @@ export function Curation({ onBack, onOpen }: { onBack: () => void; onOpen: Open 
           <div className="grid grid-cols-2 gap-2">{tags.map(tag => {
             const checked = tagIds.includes(tag.id);
             return (
-              <label key={tag.id} className={`pressable flex min-h-11 min-w-0 cursor-pointer items-center gap-2 rounded-[14px] border px-3 text-[13.5px] transition-colors ${checked ? "border-gold/55 bg-gold/18 font-semibold text-gold-bright" : "border-line bg-white/[0.03] text-ink/90"}`}>
+              <label key={tag.id} className={`pressable flex min-h-11 min-w-0 cursor-pointer items-center gap-2 rounded-[14px] border px-3 text-[13.5px] transition-colors ${checked ? "border-gold bg-gold-soft font-semibold text-gold" : "border-line bg-bg text-ink"}`}>
                 <input type="checkbox" aria-label={`批量标签 ${tag.name}`} checked={checked} disabled={!checked && tagIds.length >= 20}
                   onChange={() => setTagIds(ids => ids.includes(tag.id) ? ids.filter(id => id !== tag.id) : ids.length < 20 ? [...ids, tag.id] : ids)} className="sr-only" />
-                <span aria-hidden="true" className={`grid size-4.5 shrink-0 place-items-center rounded-full border ${checked ? "border-gold-bright bg-gold text-bg" : "border-line-strong text-transparent"}`}>
+                <span aria-hidden="true" className={`grid size-4.5 shrink-0 place-items-center rounded-full border ${checked ? "border-gold bg-gold text-white" : "border-line-strong text-transparent"}`}>
                   <CheckIcon size={11} weight="bold" />
                 </span>
                 <span className="truncate">{tag.name}</span>
@@ -275,7 +275,7 @@ export function Curation({ onBack, onOpen }: { onBack: () => void; onOpen: Open 
           {!tags.length && <p className="text-[13px] text-muted">还没有标签，可在播放器中添加。</p>}
         </fieldset>
         {actionError && <p role="alert" className="text-[13px] text-accent">操作失败，已保留选择，请重试。</p>}
-        <div className="sticky bottom-0 flex gap-2 bg-[#101116]/95 py-2 backdrop-blur-md">
+        <div className="sticky bottom-0 flex gap-2 bg-surface/95 py-2 backdrop-blur-md">
           <button type="button" aria-label="取消批量标签" disabled={saving} onClick={closeTags} className="glass-pill pressable min-h-11 flex-1 rounded-full text-[14px] disabled:opacity-40">取消</button>
           <button type="button" aria-label={`确认${tagLabel}`} disabled={saving || !tagIds.length} onClick={() => void apply(tagAction === "add" ? { add_tags: tagIds } : { remove_tags: tagIds })}
             className="glass-pill-gold pressable min-h-11 flex-1 rounded-full text-[14px] font-semibold disabled:opacity-40">{saving ? "保存中…" : tagLabel}</button>

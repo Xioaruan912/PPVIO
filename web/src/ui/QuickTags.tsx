@@ -41,8 +41,8 @@ export function QuickTagButton({ media, onSaved, enabled = true, iconOnly = fals
   return <>
     <button type="button" aria-label="标签收藏" title="标签收藏" disabled={!enabled || !visible} onClick={() => setOpenedId(media.id)}
       className={iconOnly
-        ? "pressable grid size-9 place-items-center rounded-full border border-line bg-surface/70 text-ink/85 hover:border-gold/45 hover:text-ink disabled:opacity-45"
-        : "pressable flex size-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-line bg-surface/70 text-[13px] font-medium text-ink disabled:opacity-45 sm:w-auto sm:px-3.5"}>
+        ? "pressable grid size-9 place-items-center rounded-full border border-line bg-bg text-ink/80 hover:border-gold/45 hover:bg-gold-soft hover:text-gold disabled:opacity-45"
+        : "pressable flex size-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-line bg-bg text-[13px] font-medium text-ink disabled:opacity-45 sm:w-auto sm:px-3.5"}>
       <TagIcon size={iconOnly ? 18 : 17} weight={iconOnly ? "regular" : "regular"} />{!iconOnly && <span className="hidden sm:inline">标签</span>}
     </button>
     {open && <Sheet open onClose={() => setOpenedId(null)} title="标签收藏">
@@ -177,7 +177,7 @@ function TagPanel({ media, onDone, onSaved, onApplyMacro, compact = false, doneL
           <input type="search" aria-label="搜索标签" value={query} onChange={event => setQuery(event.target.value)}
             onKeyDown={e => { if (e.key === "Enter" && search && !exactExists) { e.preventDefault(); void quickCreate(); } }}
             placeholder="筛选或回车新建标签"
-            className="h-9 w-full min-w-0 rounded-full border border-line bg-black/45 pl-8.5 pr-3 text-[13px] text-ink placeholder:text-faint outline-none focus:border-gold/50" />
+            className="h-9 w-full min-w-0 rounded-full border border-line bg-raised pl-8.5 pr-3 text-[13px] text-ink placeholder:text-faint outline-none focus:border-gold/50 focus:bg-surface" />
         </div>
         {search && !exactExists && (
           <button type="button" onClick={() => void quickCreate()} disabled={creating || finishing}
@@ -230,10 +230,10 @@ function TagPanel({ media, onDone, onSaved, onApplyMacro, compact = false, doneL
               <div className="flex flex-wrap gap-1.5">{group.items.map(tag => {
                 const checked = selected.includes(tag.id), pending = busy.has(tag.id);
                 return <label key={tag.id}
-                  className={`pressable inline-flex cursor-pointer items-center gap-1.5 rounded-full border transition-[background-color,border-color,color,transform] duration-150 ${compact ? "min-h-8.5 px-3 text-[12.5px]" : "min-h-10 px-3.5 text-sm"} max-w-full ${checked ? "border-gold/60 bg-gold/22 font-semibold text-gold-bright" : "border-line bg-white/[0.04] text-ink/88 hover:border-line-strong"} ${pending ? "opacity-60" : ""}`}>
+                  className={`pressable inline-flex cursor-pointer items-center gap-1.5 rounded-full border transition-[background-color,border-color,color,transform] duration-150 ${compact ? "min-h-8.5 px-3 text-[12.5px]" : "min-h-10 px-3.5 text-sm"} max-w-full ${checked ? "border-gold bg-gold font-semibold text-white" : "border-line bg-bg text-ink hover:border-line-strong"} ${pending ? "opacity-60" : ""}`}>
                   <input type="checkbox" aria-label={`标签 ${tag.name}`} aria-busy={pending} checked={checked} disabled={pending || finishing}
                     onChange={event => void setTag(tag, event.target.checked)} className="sr-only" />
-                  {checked && <CheckIcon size={12} weight="bold" className="shrink-0 text-gold-bright" />}
+                  {checked && <CheckIcon size={12} weight="bold" className="shrink-0 text-white" />}
                   <span className="min-w-0 break-words">{tag.name}</span>
                   {pending && <span className="shrink-0 text-[11px] text-muted">保存中</span>}
                 </label>;

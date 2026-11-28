@@ -50,11 +50,11 @@ export function Duplicates({ onClose }: { onClose: () => void }) {
                     <span className="absolute bottom-1.5 right-1.5 rounded-md bg-black/55 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-white backdrop-blur-sm">{formatDuration(item.duration_seconds)}</span>
                   </div>
                   <span className="text-[12px] tabular-nums text-muted">{item.width}×{item.height} · {size(item.size_bytes)}</span>
-                  <button type="button" onClick={() => void keep(group, item)} className="pressable h-9 rounded-full bg-raised text-[13px] font-semibold text-ink hover:bg-white/[0.14]">保留这个</button>
+                  <button type="button" onClick={() => void keep(group, item)} className="pressable h-9 rounded-full bg-raised text-[13px] font-semibold text-ink hover:bg-ink/10">保留这个</button>
                 </div>
               ))}
             </div>
-            <button type="button" onClick={() => dismiss(group)} className="pressable mt-3 h-9 w-full rounded-full text-[13px] text-muted hover:bg-white/[0.04]">不是重复（第 {index + 1} 组）</button>
+            <button type="button" onClick={() => dismiss(group)} className="pressable mt-3 h-9 w-full rounded-full text-[13px] text-muted hover:bg-ink/[0.04]">不是重复（第 {index + 1} 组）</button>
           </section>
         ))}
       </main>

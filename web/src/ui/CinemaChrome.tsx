@@ -10,7 +10,7 @@ export function OdometerIndex({ current, total, className = "" }: { current: num
   const curStr = String(current).padStart(2, "0");
   const totStr = String(Math.max(current, total)).padStart(2, "0");
   return (
-    <span className={`film-slate inline-flex items-center gap-1 text-[11px] font-semibold text-gold-bright ${className}`}>
+    <span className={`film-slate inline-flex items-center gap-1 text-[11px] font-semibold text-gold ${className}`}>
       <span className="relative inline-flex h-[1.25em] min-w-[2ch] items-center justify-center overflow-hidden">
         <AnimatePresence mode="popLayout" initial={false}>
           <motion.span
@@ -25,8 +25,8 @@ export function OdometerIndex({ current, total, className = "" }: { current: num
           </motion.span>
         </AnimatePresence>
       </span>
-      <span className="text-ink/35">/</span>
-      <span className="text-ink/70">{totStr}</span>
+      <span className="text-ink/25">/</span>
+      <span className="text-muted">{totStr}</span>
     </span>
   );
 }

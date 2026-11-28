@@ -37,9 +37,9 @@ export function IosSwitch({ checked, onChange }: { checked: boolean; onChange: (
     <span className="relative inline-flex shrink-0 items-center">
       <input type="checkbox" className="peer sr-only" checked={checked} onChange={e => onChange(e.target.checked)} />
       <span aria-hidden="true"
-        className={`relative h-[30px] w-[50px] rounded-full transition-colors duration-200 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-gold ${checked ? "bg-ok shadow-[0_0_12px_rgba(48,209,88,0.35)]" : "bg-white/[0.16]"}`}>
+        className={`relative h-[30px] w-[50px] rounded-full transition-colors duration-200 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-gold ${checked ? "bg-ok" : "bg-ink/16"}`}>
         <motion.span layout transition={SPRING_PILL}
-          className={`absolute top-[3px] block size-6 rounded-full bg-white shadow-[0_2px_6px_rgba(0,0,0,0.38)] ${checked ? "left-[23px]" : "left-[3px]"}`} />
+          className={`absolute top-[3px] block size-6 rounded-full bg-white shadow-[0_2px_5px_rgba(20,22,25,0.22)] ${checked ? "left-[23px]" : "left-[3px]"}`} />
       </span>
     </span>
   );
@@ -48,7 +48,7 @@ export function IosSwitch({ checked, onChange }: { checked: boolean; onChange: (
 export function PrefToggle({ pref, title, hint }: { pref: "lowRes" | "coverBlur" | "privacyLock" | "peekOnHold"; title: string; hint: string }) {
   const prefs = usePrefs();
   return (
-    <label className="flex cursor-pointer items-center justify-between gap-4 px-4 py-3.5 transition-colors hover:bg-white/[0.025]">
+    <label className="flex cursor-pointer items-center justify-between gap-4 px-4 py-3.5 transition-colors hover:bg-ink/[0.025]">
       <span>
         <span className="block text-[15px] font-medium text-ink">{title}</span>
         <span className="mt-0.5 block text-[13px] leading-snug text-muted">{hint}</span>
@@ -63,7 +63,7 @@ export function SettingsNavRow({ icon, iconTone, title, subtitle, value, warn, o
 }) {
   return (
     <motion.button type="button" onClick={onClick} whileTap={{ scale: 0.985 }} transition={SPRING_TAP}
-      className="flex w-full items-center gap-3.5 px-4 py-3.5 text-left transition-colors hover:bg-white/[0.03] active:bg-white/[0.06]">
+      className="flex w-full items-center gap-3.5 px-4 py-3.5 text-left transition-colors hover:bg-ink/[0.025] active:bg-ink/[0.05]">
       <span className={`grid size-10 shrink-0 place-items-center rounded-[13px] ${iconTone}`}>{icon}</span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[15px] font-medium text-ink">{title}</span>

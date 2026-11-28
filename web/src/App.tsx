@@ -17,15 +17,7 @@ const TagCollections = lazy(() => import("./pages/TagCollections").then(m => ({ 
 const Settings = lazy(() => import("./Settings").then(m => ({ default: m.Settings })));
 const LongPlayer = lazy(() => import("./player/LongPlayer").then(m => ({ default: m.LongPlayer })));
 const Duplicates = lazy(() => import("./pages/Duplicates").then(m => ({ default: m.Duplicates })));
-const BookmarkWall = lazy(() => import("./ui/Bookmarks").then(m => ({ default: m.BookmarkWall })));
-const BookmarkLoopFeed = lazy(() => import("./pages/BookmarkLoopFeed").then(m => ({ default: m.BookmarkLoopFeed })));
-const Curation = lazy(() => import("./pages/Curation").then(m => ({ default: m.Curation })));
-const History = lazy(() => import("./pages/History").then(m => ({ default: m.History })));
-const Channels = lazy(() => import("./pages/Channels").then(m => ({ default: m.Channels })));
 const TagManager = lazy(() => import("./pages/TagManager").then(m => ({ default: m.TagManager })));
-const Queue = lazy(() => import("./pages/Queue").then(m => ({ default: m.Queue })));
-const QueuePlayer = lazy(() => import("./player/QueuePlayer").then(m => ({ default: m.QueuePlayer })));
-const MultiView = lazy(() => import("./pages/MultiView").then(m => ({ default: m.MultiView })));
 
 type Tab = "feed" | "library" | "favorites" | "settings";
 const TAB_ORDER: readonly Tab[] = ["feed", "library", "favorites", "settings"];
@@ -40,12 +32,7 @@ type Overlay =
   | { kind: "clips"; items: Media[]; index: number; at?: number }
   | { kind: "long"; items: Media[]; index: number; at?: number }
   | { kind: "duplicates" }
-  | { kind: "bookmarks" }
-  | { kind: "curation" }
-  | { kind: "loops"; tagId?: number }
-  | { kind: "multiview" }
-  | { kind: "history" | "channels" | "premium" | "tags" | "queue" }
-  | { kind: "queue-player"; ids: string[]; index: number }
+  | { kind: "tags" }
   | null;
 
 export function overlayFor(items: Media[], index: number): Overlay {
@@ -102,8 +89,6 @@ export function App() {
   }, [overlay]);
 
   const close = () => back();
-  const show = (kind: "history" | "channels" | "premium" | "tags" | "queue") => navigate({ ...route, overlay: { kind } });
-  const playQueue = (ids: string[], index: number) => navigate({ ...route, overlay: { kind: "queue-player", ids, index } });
   const onUnauthorized = useCallback(() => setAuthed(false), []);
   const open = (items: Media[], index: number, _more?: () => void, at?: number) => {
     const picked = overlayFor(items, index);
@@ -120,41 +105,46 @@ export function App() {
 
   return (
     <MotionConfig reducedMotion="user">
-      {/* Direction A: Strict single-viewport 100dvh Darkroom Folio Shell (zero vertical scrolling) */}
+      {/* Kyoto Museum Folio — Pure Single-Viewport Screening & Library Shell */}
       <div className="cinema-aura flex h-dvh w-full flex-col overflow-hidden bg-bg text-ink">
-        {/* Top Architectural Folio Navigation — COMPLETELY OUTSIDE ALL VIDEO FRAMES */}
+        {/* Top Kyoto Gallery Navigation — outside all video frames & safe below iOS status bar */}
         {!overlay && (
-          <header className="z-20 flex h-13 shrink-0 items-center justify-between gap-3 border-b border-line bg-bg/95 px-4 pt-[env(safe-area-inset-top)] sm:h-14 sm:px-8">
-            <span className="hidden text-[15px] font-semibold tracking-[-0.02em] text-ink sm:inline">PPVIO</span>
-            <nav aria-label="导航" className="mx-auto flex items-center gap-6 sm:gap-9">
-              {TAB_ORDER.map(key => {
-                const active = tab === key;
-                return (
-                  <motion.button
-                    key={key}
-                    type="button"
-                    onClick={() => setTab(key)}
-                    aria-current={active ? "page" : undefined}
-                    whileTap={{ scale: 0.94 }}
-                    transition={SPRING_TAP}
-                    className={`relative flex h-13 items-center text-[15px] tracking-[-0.01em] transition-colors sm:h-14 ${
-                      active ? "font-semibold text-ink" : "font-normal text-muted hover:text-ink"
-                    }`}
-                  >
-                    <span>{TAB_LABELS[key]}</span>
-                    {active && (
-                      <motion.span
-                        layoutId="ppvio-folio-tab"
-                        transition={SPRING_PILL}
-                        className="absolute inset-x-0 bottom-0 h-[2px] bg-gold"
-                      />
-                    )}
-                  </motion.button>
-                );
-              })}
-            </nav>
-            <div className="flex w-10 items-center justify-end">
-              {tab !== "feed" && <BlurToggle />}
+          <header className="z-20 shrink-0 border-b border-line bg-bg/95 px-4 pt-[env(safe-area-inset-top)] backdrop-blur-md sm:px-8">
+            <div className="flex h-12 items-center justify-between gap-2 sm:h-14">
+              <div className="flex w-10 shrink-0 items-center gap-2 sm:w-24">
+                <span className="hidden size-1.5 rounded-full bg-gold sm:inline-block" aria-hidden="true" />
+                <span className="hidden text-[14px] font-semibold tracking-[0.06em] text-ink sm:inline">PPVIO</span>
+              </div>
+              <nav aria-label="导航" className="flex items-center gap-7 sm:gap-10">
+                {TAB_ORDER.map(key => {
+                  const active = tab === key;
+                  return (
+                    <motion.button
+                      key={key}
+                      type="button"
+                      onClick={() => setTab(key)}
+                      aria-current={active ? "page" : undefined}
+                      whileTap={{ scale: 0.94 }}
+                      transition={SPRING_TAP}
+                      className={`relative flex h-12 items-center text-[15px] tracking-[-0.01em] transition-colors sm:h-14 ${
+                        active ? "font-semibold text-ink" : "font-normal text-muted hover:text-ink"
+                      }`}
+                    >
+                      <span>{TAB_LABELS[key]}</span>
+                      {active && (
+                        <motion.span
+                          layoutId="ppvio-folio-tab"
+                          transition={SPRING_PILL}
+                          className="absolute inset-x-0 bottom-0 h-[2px] rounded-full bg-gold"
+                        />
+                      )}
+                    </motion.button>
+                  );
+                })}
+              </nav>
+              <div className="flex w-10 shrink-0 items-center justify-end sm:w-24">
+                {tab !== "feed" && <BlurToggle />}
+              </div>
             </div>
           </header>
         )}
@@ -179,14 +169,6 @@ export function App() {
                     onFolderChange={folder => navigate({ ...route, folder })}
                     onOpen={open}
                     refresh={closed}
-                    onBookmarks={() => navigate({ ...route, tab, overlay: { kind: "bookmarks" } })}
-                    onCuration={() => navigate({ ...route, tab, overlay: { kind: "curation" } })}
-                    onHistory={() => show("history")}
-                    onChannels={() => show("channels")}
-                    onPremium={() => show("premium")}
-                    onQueue={() => show("queue")}
-                    onMultiView={() => navigate({ ...route, tab, overlay: { kind: "multiview" } })}
-                    onLoops={() => navigate({ ...route, tab, overlay: { kind: "loops" } })}
                   />
                 </motion.div>
               </div>
@@ -202,7 +184,7 @@ export function App() {
                 >
                   <TagCollections
                     onOpen={open}
-                    onManage={() => show("tags")}
+                    onManage={() => navigate({ ...route, overlay: { kind: "tags" } })}
                     refresh={closed}
                     notice={tab === "favorites" && !overlay ? <TagFilingNotice /> : undefined}
                   />
@@ -214,9 +196,9 @@ export function App() {
               <motion.div
                 key="folio-settings"
                 className="size-full"
-                initial={{ opacity: 0, x: direction * 32 }}
+                initial={{ opacity: 0, x: direction * 24 }}
                 animate={{ opacity: 1, x: 0 }}
-                transition={SPRING_STAGE}
+                transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
               >
                 <Settings
                   onLoggedOut={onUnauthorized}
@@ -247,37 +229,8 @@ export function App() {
               {overlay?.kind === "duplicates" && (
                 <OverlaySheet key="ov-dupes"><Duplicates onClose={close} /></OverlaySheet>
               )}
-              {overlay?.kind === "bookmarks" && (
-                <OverlaySheet key="ov-bookmarks">
-                  <BookmarkWall onBack={close} onOpen={(media, at) => open([media], 0, undefined, at)} onLoop={tagId => navigate({ ...route, overlay: { kind: "loops", tagId } })} />
-                </OverlaySheet>
-              )}
-              {overlay?.kind === "loops" && (
-                <motion.div key="ov-loops" className="fixed inset-0 z-30 bg-bg"
-                  initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.97 }} transition={SPRING_STAGE}>
-                  <BookmarkLoopFeed onClose={close} tagId={overlay.tagId} />
-                </motion.div>
-              )}
-              {overlay?.kind === "multiview" && (
-                <motion.div key="ov-multiview" className="fixed inset-0 z-30 bg-bg"
-                  initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.97 }} transition={SPRING_STAGE}>
-                  <MultiView onBack={close} onOpen={open} />
-                </motion.div>
-              )}
-              {overlay?.kind === "curation" && <OverlaySheet key="ov-curation"><Curation onBack={close} onOpen={open} /></OverlaySheet>}
-              {overlay?.kind === "history" && <OverlaySheet key="ov-history"><History onBack={close} onOpen={open} /></OverlaySheet>}
-              {(overlay?.kind === "channels" || overlay?.kind === "premium") && (
-                <OverlaySheet key={`ov-${overlay.kind}`}>
-                  <Channels onBack={close} onOpen={open} premiumOnly={overlay.kind === "premium"} onPlayQueue={items => playQueue(items.map(item => item.id), 0)} />
-                </OverlaySheet>
-              )}
-              {overlay?.kind === "tags" && <OverlaySheet key="ov-tags"><TagManager onBack={close} /></OverlaySheet>}
-              {overlay?.kind === "queue" && <OverlaySheet key="ov-queue"><Queue onBack={close} onPlay={playQueue} /></OverlaySheet>}
-              {overlay?.kind === "queue-player" && (
-                <motion.div key="ov-qp" className="fixed inset-0 z-30 bg-bg"
-                  initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.97 }} transition={SPRING_STAGE}>
-                  <QueuePlayer ids={overlay.ids} start={overlay.index} onClose={close} />
-                </motion.div>
+              {overlay?.kind === "tags" && (
+                <OverlaySheet key="ov-tags"><TagManager onBack={close} /></OverlaySheet>
               )}
             </AnimatePresence>
           </Suspense>
@@ -293,12 +246,11 @@ export function App() {
 function OverlaySheet({ children }: { children: React.ReactNode }) {
   return (
     <motion.div
-      className="cinema-aura fixed inset-0 z-30 overflow-y-auto bg-bg"
-      style={{ backgroundColor: "#050507" }}
-      initial={{ opacity: 0, x: 32 }}
+      className="cinema-aura fixed inset-0 z-30 overflow-y-auto bg-bg text-ink"
+      initial={{ opacity: 0, x: 24 }}
       animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: 24 }}
-      transition={SPRING_STAGE}
+      exit={{ opacity: 0, x: 18 }}
+      transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
     >
       {children}
     </motion.div>
